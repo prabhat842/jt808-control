@@ -33,9 +33,7 @@ services:
     description: "JT808 signaling · terminals connect here when ready"
     group: infrastructure
     jar: /home/prabhat/jt808-server/target/jt808-server-0.1.0-SNAPSHOT.jar
-    args:
-      - "--config"
-      - "/home/prabhat/jt808-server/config/server.json"
+    args: []
     workDir: /home/prabhat/jt808-server
     displayOrder: 2
 
