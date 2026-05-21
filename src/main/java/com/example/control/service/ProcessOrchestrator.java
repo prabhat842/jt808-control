@@ -57,15 +57,16 @@ public class ProcessOrchestrator {
      * Vehicle services connect to infrastructure when it becomes available.
      */
     public void startAll() {
-        displayOrder.forEach(mp -> {
-            Thread t = Thread.ofVirtual().name("start-" + mp.definition().getId()).start(() -> {
+        List<Thread> threads = displayOrder.stream()
+                .map(mp -> Thread.ofVirtual().name("start-" + mp.definition().getId()).start(() -> {
                 try {
                     mp.start();
                 } catch (Exception e) {
                     log.error("Failed to start {}: {}", mp.definition().getName(), e.getMessage());
                 }
-            });
-        });
+            }))
+                .toList();
+        joinAll(threads);
     }
 
     /**
@@ -77,24 +78,23 @@ public class ProcessOrchestrator {
         List<ManagedProcess> infra   = byGroup("infrastructure");
 
         // Vehicle first — terminals log out gracefully per protocol
-        vehicle.forEach(mp -> Thread.ofVirtual().name("stop-" + mp.definition().getId()).start(mp::stop));
-        vehicle.stream().map(mp -> mp.definition().getId()).forEach(id -> {
-            // give each vehicle process time to send logout before cutting infrastructure
-        });
+        joinAll(vehicle.stream()
+                .map(mp -> Thread.ofVirtual().name("stop-" + mp.definition().getId()).start(mp::stop))
+                .toList());
 
         // Brief pause so terminals can send 0x0003 logout before server closes
         try { Thread.sleep(2000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
 
         // Infrastructure stops — server closes, rtvs closes
-        infra.forEach(mp -> Thread.ofVirtual().name("stop-" + mp.definition().getId()).start(mp::stop));
+        joinAll(infra.stream()
+                .map(mp -> Thread.ofVirtual().name("stop-" + mp.definition().getId()).start(mp::stop))
+                .toList());
     }
 
     public void restartAll() {
-        Thread.ofVirtual().name("restart-all").start(() -> {
-            stopAll();
-            try { Thread.sleep(1000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-            startAll();
-        });
+        stopAll();
+        try { Thread.sleep(1000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        startAll();
     }
 
     public List<StatusDto> status() {
@@ -129,6 +129,17 @@ public class ProcessOrchestrator {
         return displayOrder.stream()
                 .filter(mp -> group.equals(mp.definition().getGroup()))
                 .toList();
+    }
+
+    private static void joinAll(List<Thread> threads) {
+        for (Thread thread : threads) {
+            try {
+                thread.join();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
     }
 
     public record StatusDto(

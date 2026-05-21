@@ -35,7 +35,12 @@ public final class ManagedProcess {
     }
 
     public synchronized void start() throws Exception {
-        if (state == State.RUNNING || state == State.STARTING) return;
+        reconcileState();
+        if (state == State.RUNNING || state == State.STARTING || state == State.STOPPING) return;
+        if (process != null && process.isAlive()) {
+            state = State.RUNNING;
+            return;
+        }
         state = State.STARTING;
 
         List<String> cmd = new ArrayList<>();
@@ -62,6 +67,7 @@ public final class ManagedProcess {
             } catch (Exception ignored) {}
             if (state == State.RUNNING) {
                 state = State.STOPPED;
+                process = null;
                 pid = -1;
                 appendLog("--- process exited ---");
             }
@@ -76,7 +82,11 @@ public final class ManagedProcess {
         if (state == State.STOPPED || state == State.STOPPING) return;
         state = State.STOPPING;
         Process p = process;
-        if (p == null) { state = State.STOPPED; return; }
+        if (p == null) {
+            state = State.STOPPED;
+            pid = -1;
+            return;
+        }
 
         appendLog("--- stopping (SIGTERM) ---");
         p.destroy();
@@ -89,6 +99,7 @@ public final class ManagedProcess {
             Thread.currentThread().interrupt();
             p.destroyForcibly();
         }
+        process = null;
         state = State.STOPPED;
         pid = -1;
         appendLog("--- stopped ---");
@@ -134,4 +145,24 @@ public final class ManagedProcess {
     public long getPid()                    { return pid; }
     public Instant getStartedAt()           { return startedAt; }
     public boolean isRunning()              { return state == State.RUNNING; }
+
+    private void reconcileState() {
+        Process p = process;
+        if (p == null) {
+            if (state != State.STOPPED) {
+                state = State.STOPPED;
+                pid = -1;
+            }
+            return;
+        }
+        if (p.isAlive()) {
+            if (state == State.STOPPED) {
+                state = State.RUNNING;
+            }
+            return;
+        }
+        process = null;
+        state = State.STOPPED;
+        pid = -1;
+    }
 }

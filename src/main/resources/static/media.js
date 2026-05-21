@@ -28,6 +28,11 @@ const fmt = n => n >= 1e6 ? (n/1e6).toFixed(1)+' MB' : n >= 1e3 ? (n/1e3).toFixe
 const indicator = (ok, t, f) => `<span class="${ok?'ok':'warn'}">${ok?t:f}</span>`;
 const sessionKey = s => s.terminalId + '#' + s.channelId;
 const shortId = id => id.replace(/^0+/, '') || '0';
+const stoppedSessions = new Set();
+const stopKey = (terminalId, channelId) => terminalId + '#' + channelId;
+const markStopped = key => stoppedSessions.add(key);
+const clearStopped = key => stoppedSessions.delete(key);
+const isStopped = key => stoppedSessions.has(key);
 
 // ── VideoTile ─────────────────────────────────────────────────────────────
 class VideoTile {
@@ -39,6 +44,7 @@ class VideoTile {
     this.decoder    = null;
     this.pending    = null;
     this.firstFrame = true;
+    this.audioLevel = 0;
 
     this.el = this._build();
     videoGrid.appendChild(this.el);
@@ -47,6 +53,7 @@ class VideoTile {
     this.badge  = this.el.querySelector('.tile-badge');
     this.label  = this.el.querySelector('.tile-stream-label');
     this.stats  = this.el.querySelector('.tile-stats');
+    this.audioBars = Array.from(this.el.querySelectorAll('.tile-audio-meter i'));
   }
 
   _build() {
@@ -59,7 +66,11 @@ class VideoTile {
         <div class="tile-add-icon">+</div>
         <span class="tile-empty-label">Add stream</span>
       </div>
-      <div class="tile-stats"></div>
+      <div class="tile-stats">
+        <span class="tile-audio-meter" aria-hidden="true">
+          <i></i><i></i><i></i><i></i>
+        </span>
+      </div>
       <div class="tile-bar">
         <span class="tile-stream-label"></span>
         <span class="tile-badge stopped">—</span>
@@ -89,6 +100,7 @@ class VideoTile {
   }
 
   assign(terminalId, channelId) {
+    if (isStopped(stopKey(terminalId, channelId))) return;
     this.close();
     this.terminalId = terminalId;
     this.channelId  = channelId;
@@ -99,22 +111,37 @@ class VideoTile {
     this._connectWs();
   }
 
+  ensureConnected() {
+    if (!this.terminalId) return false;
+    const ready = this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING);
+    if (ready) return true;
+    this._resetDecoder();
+    this.pending = null;
+    this.firstFrame = true;
+    this.el.classList.remove('tile--error', 'tile--live');
+    this.el.classList.add('tile--connecting');
+    this._setBadge('reconnecting', 'connecting');
+    this._connectWs();
+    return true;
+  }
+
   close() {
     if (this.ws) { try { this.ws.close(); } catch(_){} this.ws = null; }
     this._resetDecoder();
     this.terminalId = null;
     this.channelId  = null;
     this.firstFrame = true;
+    this.setAudioLevel(0);
     this.el.classList.remove('tile--connecting', 'tile--live', 'tile--error');
     this.el.classList.add('tile--empty');
     this.label.textContent = '';
-    this.stats.textContent = '';
     this._setBadge('—', 'stopped');
     if (this.canvas.width) this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
   }
 
   stop() {
     const tid = this.terminalId, ch = this.channelId;
+    if (tid) markStopped(stopKey(tid, ch));
     this.close();
     if (tid) fetch(`/api/live/stop?terminal=${tid}&channel=${ch}`).catch(() => {});
   }
@@ -124,7 +151,8 @@ class VideoTile {
   }
 
   updateStats(frames, bytes, bps) {
-    if (this.terminalId) this.stats.textContent = fmt(bps) + '/s';
+    if (!this.terminalId) return;
+    this.setAudioLevel(this.audioLevel);
   }
 
   isEmpty() { return !this.terminalId; }
@@ -145,7 +173,10 @@ class VideoTile {
     };
     ws.onmessage = evt => this._onMessage(evt);
     ws.onclose   = () => {
-      if (this.ws === ws) { this._setBadge('offline', 'stopped'); this.el.classList.remove('tile--live', 'tile--connecting'); }
+      if (this.ws === ws) {
+        this._setBadge('offline', 'stopped');
+        this.el.classList.remove('tile--live', 'tile--connecting');
+      }
     };
     ws.onerror = () => { this.el.classList.add('tile--error'); this._setBadge('error', 'error'); };
   }
@@ -212,6 +243,17 @@ class VideoTile {
     this.decoder = null; this.pending = null;
   }
 
+  setAudioLevel(level) {
+    const next = Math.max(0, Math.min(1, Number(level) || 0));
+    this.audioLevel = next;
+    const fills = [0.18, 0.42, 0.68, 1];
+    this.audioBars.forEach((bar, idx) => {
+      const active = next >= fills[idx];
+      bar.classList.toggle('is-active', active);
+      bar.style.height = active ? `${Math.round(3 + next * 14 + idx * 2)}px` : `${3 + idx}px`;
+    });
+  }
+
   _setBadge(text, cls) { this.badge.textContent = text; this.badge.className = 'tile-badge ' + (cls || ''); }
 
   _codecFromSps(data) {
@@ -243,8 +285,13 @@ const tileManager = {
 
   assignSession(terminalId, channelId) {
     const key = terminalId + '#' + channelId;
+    if (isStopped(key)) return;
     const existing = this.tiles.find(t => t.key() === key);
-    if (existing) { this.selectTile(existing.index); return; }
+    if (existing) {
+      existing.ensureConnected();
+      this.selectTile(existing.index);
+      return;
+    }
     let target = this.selectedIdx !== null ? this.tiles[this.selectedIdx] : null;
     if (!target) target = this.tiles.find(t => t.isEmpty()) || this.tiles[0];
     target.assign(terminalId, channelId);
@@ -321,10 +368,13 @@ function renderVehicles(terminals, sessions) {
       prevBytes[key] = s.bytes;
       tileManager.updateStats(s.terminalId, s.channelId, s.frames, s.bytes, bps);
       const isAssigned = assigned.has(key);
+      const paused = isStopped(key);
+      const statusText = paused ? '○ stopped' : s.active ? '● live' : '○ idle';
+      const statusClass = paused ? 'badge badge--warn' : s.active ? 'badge badge--on' : 'badge badge--off';
       return `<div class="ch-row${isAssigned ? ' ch-row--assigned' : ''}" data-tid="${s.terminalId}" data-ch="${s.channelId}">
         <div class="ch-left">
           <span class="ch-num">ch ${s.channelId}</span>
-          <span class="ch-status badge ${s.active ? 'badge--on' : 'badge--off'}">${s.active ? '● live' : '○ idle'}</span>
+          <span class="ch-status ${statusClass}">${statusText}</span>
         </div>
         <div class="ch-stats">${fmt(bps)}/s · ${s.frames.toLocaleString()} fr</div>
         <div class="ch-actions">
@@ -372,6 +422,7 @@ function renderVehicles(terminals, sessions) {
     row.querySelector('.sc-btn--assign').addEventListener('click', e => { e.stopPropagation(); tileManager.assignSession(tid, ch); });
     row.querySelector('.sc-btn--stop').addEventListener('click', e => {
       e.stopPropagation();
+      markStopped(stopKey(tid, ch));
       fetch(`/api/live/stop?terminal=${tid}&channel=${ch}`).catch(() => {});
       tileManager.tiles.filter(t => t.key() === tid + '#' + ch).forEach(t => t.close());
     });
@@ -383,6 +434,7 @@ function renderVehicles(terminals, sessions) {
       e.stopPropagation();
       const tid = btn.dataset.tid;
       const ch  = parseInt(btn.closest('.ch-start-row').querySelector('.ch-select').value);
+      clearStopped(stopKey(tid, ch));
       fetch(`/api/live/start?terminal=${tid}&channel=${ch}`).catch(() => {});
       setTimeout(() => tileManager.assignSession(
         vehicleList.querySelector(`[data-rtvsid]`)?.dataset.rtvsid || tid, ch), 800);
@@ -398,10 +450,17 @@ async function pollVehicles() {
     ]);
     if (!termRes.ok || !sessRes.ok) throw new Error();
     const [terminals, sessions] = await Promise.all([termRes.json(), sessRes.json()]);
+    const sessionKeys = new Set(sessions.map(sessionKey));
+    stoppedSessions.forEach(key => { if (!sessionKeys.has(key)) stoppedSessions.delete(key); });
     healthEl.textContent = 'online'; healthEl.className = 'badge badge--on';
     renderVehicles(terminals, sessions);
+    tileManager.tiles.forEach(t => {
+      if (t.key() && sessions.some(s => sessionKey(s) === t.key()) && !isStopped(t.key())) {
+        t.ensureConnected();
+      }
+    });
     if (tileManager.tiles.every(t => t.isEmpty())) {
-      const first = sessions.find(s => s.active);
+      const first = sessions.find(s => s.active && !isStopped(sessionKey(s)));
       if (first) tileManager.assignSession(first.terminalId, first.channelId);
     }
   } catch {
@@ -438,6 +497,13 @@ async function pollDms() {
 const talkback = (() => {
   let cvnet = null;
   let activeTile = null;
+  let audioCtx = null;
+  let audioAnalyser = null;
+  let audioSource = null;
+  let meterTimer = null;
+  let trackedStream = null;
+  let originalGetUserMedia = null;
+  let patched = false;
 
   function getCvNet() {
     if (cvnet) return cvnet;
@@ -457,10 +523,74 @@ const talkback = (() => {
     return cvnet;
   }
 
+  function installAudioMeter(stream, tile) {
+    cleanupAudioMeter();
+    if (!stream || !stream.getAudioTracks || stream.getAudioTracks().length === 0) return;
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    try {
+      audioCtx = new AudioCtx();
+      audioSource = audioCtx.createMediaStreamSource(stream);
+      audioAnalyser = audioCtx.createAnalyser();
+      audioAnalyser.fftSize = 256;
+      audioSource.connect(audioAnalyser);
+      trackedStream = stream;
+      const data = new Uint8Array(audioAnalyser.fftSize);
+      meterTimer = setInterval(() => {
+        if (!activeTile || activeTile !== tile || !audioAnalyser) return;
+        audioAnalyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) {
+          const x = (data[i] - 128) / 128;
+          sum += x * x;
+        }
+        const rms = Math.sqrt(sum / data.length);
+        tile.setAudioLevel(Math.min(1, Math.max(0, rms * 3)));
+      }, 50);
+    } catch (e) {
+      console.warn('audio meter unavailable:', e);
+    }
+  }
+
+  function cleanupAudioMeter() {
+    if (meterTimer) {
+      clearInterval(meterTimer);
+      meterTimer = null;
+    }
+    if (audioSource) {
+      try { audioSource.disconnect(); } catch (_) {}
+      audioSource = null;
+    }
+    if (audioAnalyser) {
+      try { audioAnalyser.disconnect(); } catch (_) {}
+      audioAnalyser = null;
+    }
+    if (audioCtx) {
+      try { audioCtx.close(); } catch (_) {}
+      audioCtx = null;
+    }
+    trackedStream = null;
+  }
+
+  function patchMicCapture() {
+    if (patched) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+    originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = async constraints => {
+      const stream = await originalGetUserMedia(constraints);
+      if (constraints && constraints.audio && activeTile) {
+        installAudioMeter(stream, activeTile);
+      }
+      return stream;
+    };
+    patched = true;
+  }
+
   function start(tile) {
     const sdk = getCvNet();
     if (!sdk || !tile.terminalId) return;
     stop();
+    patchMicCapture();
     activeTile = tile;
     tile.el.querySelector('.tile-btn--talk').classList.add('tile-btn--talk-active');
     try {
@@ -474,8 +604,10 @@ const talkback = (() => {
   function stop() {
     if (activeTile) {
       activeTile.el.querySelector('.tile-btn--talk').classList.remove('tile-btn--talk-active');
+      activeTile.setAudioLevel(0);
       activeTile = null;
     }
+    cleanupAudioMeter();
     const sdk = getCvNet();
     if (sdk) { try { sdk.StopSpeak(); } catch (_) {} }
   }

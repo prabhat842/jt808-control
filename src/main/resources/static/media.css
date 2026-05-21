@@ -195,9 +195,30 @@
   font-size: 10px; color: rgba(255,255,255,.55);
   z-index: 3; pointer-events: none;
   opacity: 0; transition: opacity var(--trans);
+  display: flex; align-items: center; gap: 6px;
 }
 .media-wall .tile:hover .tile-stats { opacity: 1; }
 .media-wall .tile--live .tile-stats { opacity: 1; }
+
+.media-wall .tile-audio-meter {
+  display: inline-flex;
+  align-items: end;
+  gap: 2px;
+  width: 32px;
+  height: 18px;
+}
+.media-wall .tile-audio-meter i {
+  width: 5px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255,255,255,.18);
+  transition: height .08s linear, background .12s linear, opacity .12s linear;
+  opacity: .8;
+}
+.media-wall .tile-audio-meter i.is-active {
+  background: var(--green);
+  opacity: 1;
+}
 
 /* ── sidebar ─────────────────────────────────────────────────────────── */
 .media-wall .sidebar {
