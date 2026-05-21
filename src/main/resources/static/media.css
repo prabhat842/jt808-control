@@ -186,6 +186,9 @@
 .media-wall .tile-btn--stop:hover  { color: var(--orange); }
 .media-wall .tile-btn--close:hover { color: var(--red); }
 .media-wall .tile-btn--fs:hover    { color: var(--accent); }
+.media-wall .tile-btn--talk:hover  { color: var(--green); }
+.media-wall .tile-btn--talk-active { background: rgba(46,204,113,.25) !important; color: var(--green) !important; }
+.media-wall .tile-btn--talk-active:hover { background: rgba(46,204,113,.4) !important; }
 
 .media-wall .tile-stats {
   position: absolute; top: 6px; left: 6px;

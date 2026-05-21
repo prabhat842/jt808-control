@@ -3,6 +3,8 @@
 // ── constants ─────────────────────────────────────────────────────────────
 const NUM_TILES   = 4;
 const DMS_URL     = 'http://localhost:7500/dms/state';
+const RTVS_HOST   = location.hostname;   // RTVS runs on same host
+const RTVS_PORT   = 8089;
 const ALARM_NAMES = { 0:'none', 1:'fatigue', 2:'distraction', 5:'no seatbelt', 6:'cam blocked' };
 const MAX_CHANNELS = 6;
 
@@ -65,6 +67,9 @@ class VideoTile {
         <button class="tile-btn tile-btn--fs" title="Fullscreen">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 5V1h4M11 1h4v4M15 11v4h-4M5 15H1v-4"/></svg>
         </button>
+        <button class="tile-btn tile-btn--talk" title="Start talkback">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1a3 3 0 0 1 3 3v3a3 3 0 0 1-6 0V4a3 3 0 0 1 3-3z"/><path d="M3 7a5 5 0 0 0 10 0M8 12v3M5 15h6"/></svg>
+        </button>
         <button class="tile-btn tile-btn--stop" title="Stop stream">
           <svg viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" rx="1" fill="currentColor" stroke="none"/></svg>
         </button>
@@ -74,9 +79,10 @@ class VideoTile {
       </div>`;
 
     div.querySelector('.tile-empty-overlay').addEventListener('click', () => tileManager.selectTile(this.index));
-    div.querySelector('.tile-btn--fs').addEventListener('click',    e => { e.stopPropagation(); this.fullscreen(); });
-    div.querySelector('.tile-btn--stop').addEventListener('click',  e => { e.stopPropagation(); this.stop(); });
-    div.querySelector('.tile-btn--close').addEventListener('click', e => { e.stopPropagation(); this.close(); });
+    div.querySelector('.tile-btn--fs').addEventListener('click',   e => { e.stopPropagation(); this.fullscreen(); });
+    div.querySelector('.tile-btn--talk').addEventListener('click', e => { e.stopPropagation(); talkback.toggleTile(this); });
+    div.querySelector('.tile-btn--stop').addEventListener('click', e => { e.stopPropagation(); this.stop(); });
+    div.querySelector('.tile-btn--close').addEventListener('click',e => { e.stopPropagation(); this.close(); });
     div.addEventListener('click', () => tileManager.selectTile(this.index));
     return div;
   }
@@ -425,6 +431,60 @@ async function pollDms() {
     dmsBadge.textContent = 'offline'; dmsBadge.className = 'badge badge--off';
   }
 }
+
+// ── Talkback (CVNet two-way audio) ────────────────────────────────────────
+
+const talkback = (() => {
+  let cvnet = null;
+  let activeTile = null;
+
+  function getCvNet() {
+    if (cvnet) return cvnet;
+    if (typeof CvNetVideo === 'undefined') {
+      console.warn('CVNet SDK not loaded — talkback unavailable');
+      return null;
+    }
+    const container = document.getElementById('cvnet-hidden');
+    cvnet = CvNetVideo.Init(container, 1, {
+      usingCluster: false,
+      clusterHost:  RTVS_HOST,
+      clusterPort:  RTVS_PORT,
+      remotePortWs: RTVS_PORT,   // used by Wasm/WebCodec playerMode
+      protocol:     2,           // JT1078
+      playerMode:   3,           // Wasm → uses remotePortWs, processes JT1078 audio
+    });
+    return cvnet;
+  }
+
+  function start(tile) {
+    const sdk = getCvNet();
+    if (!sdk || !tile.terminalId) return;
+    stop();
+    activeTile = tile;
+    tile.el.querySelector('.tile-btn--talk').classList.add('tile-btn--talk-active');
+    try {
+      sdk.StartSpeek(tile.terminalId, tile.channelId);
+    } catch (e) {
+      console.error('StartSpeek failed:', e);
+      stop();
+    }
+  }
+
+  function stop() {
+    if (activeTile) {
+      activeTile.el.querySelector('.tile-btn--talk').classList.remove('tile-btn--talk-active');
+      activeTile = null;
+    }
+    const sdk = getCvNet();
+    if (sdk) { try { sdk.StopSpeak(); } catch (_) {} }
+  }
+
+  function toggleTile(tile) {
+    if (activeTile === tile) { stop(); } else { start(tile); }
+  }
+
+  return { start, stop, toggleTile };
+})();
 
 // ── boot ──────────────────────────────────────────────────────────────────
 pollVehicles();
