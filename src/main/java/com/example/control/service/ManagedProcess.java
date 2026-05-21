@@ -43,6 +43,9 @@ public final class ManagedProcess {
         }
         state = State.STARTING;
 
+        // Kill any orphan process holding the same port (including manually-started instances)
+        if (def.getPort() > 0) evictPort(def.getPort());
+
         List<String> cmd = new ArrayList<>();
         cmd.add("java");
         cmd.add("-jar");
@@ -145,6 +148,45 @@ public final class ManagedProcess {
     public long getPid()                    { return pid; }
     public Instant getStartedAt()           { return startedAt; }
     public boolean isRunning()              { return state == State.RUNNING; }
+
+    /**
+     * Kills any OS process currently bound to {@code port}, then waits up to
+     * 3 seconds for the port to be released. Handles orphaned managed processes
+     * and instances started manually outside the control panel.
+     */
+    private void evictPort(int port) {
+        try {
+            // lsof -ti:PORT prints the PID(s) of processes holding the port
+            Process lsof = new ProcessBuilder("lsof", "-ti:" + port)
+                    .redirectErrorStream(true).start();
+            String pids = new String(lsof.getInputStream().readAllBytes()).trim();
+            lsof.waitFor(3, TimeUnit.SECONDS);
+            if (pids.isBlank()) return;
+
+            appendLog("--- evicting orphan on port " + port + " (pid " + pids.replace('\n', ' ') + ") ---");
+            for (String pidStr : pids.split("\\s+")) {
+                long orphanPid = Long.parseLong(pidStr.trim());
+                // Don't kill ourselves
+                if (orphanPid == ProcessHandle.current().pid()) continue;
+                ProcessHandle.of(orphanPid).ifPresent(ph -> {
+                    ph.destroy();
+                    try { Thread.sleep(500); } catch (InterruptedException ignored) {}
+                    if (ph.isAlive()) ph.destroyForcibly();
+                });
+            }
+            // Wait for port to be released (up to 3 s)
+            for (int i = 0; i < 6; i++) {
+                Thread.sleep(500);
+                Process check = new ProcessBuilder("lsof", "-ti:" + port)
+                        .redirectErrorStream(true).start();
+                String still = new String(check.getInputStream().readAllBytes()).trim();
+                check.waitFor(2, TimeUnit.SECONDS);
+                if (still.isBlank()) break;
+            }
+        } catch (Exception e) {
+            log.warn("evictPort({}) failed: {}", port, e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+        }
+    }
 
     private void reconcileState() {
         Process p = process;

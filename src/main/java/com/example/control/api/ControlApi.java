@@ -43,7 +43,8 @@ public class ControlApi {
             orchestrator.start(id);
             return ResponseEntity.ok(Map.of("result", "started"));
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+            String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            return ResponseEntity.internalServerError().body(Map.of("error", msg));
         }
     }
 

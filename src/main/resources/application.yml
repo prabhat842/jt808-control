@@ -37,6 +37,7 @@ services:
     jar: /home/prabhat/jt808-server/target/jt808-server-0.1.0-SNAPSHOT.jar
     args: []
     workDir: /home/prabhat/jt808-server
+    port: 8888
     displayOrder: 2
 
   - id: rtvs
@@ -48,4 +49,5 @@ services:
       - "--config"
       - "/home/prabhat/jt808-rtvs/config/rtvs.json"
     workDir: /home/prabhat/jt808-rtvs
+    port: 8089
     displayOrder: 3
