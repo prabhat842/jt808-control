@@ -505,6 +505,15 @@ const talkback = (() => {
   let originalGetUserMedia = null;
   let patched = false;
 
+  function talkbackOptions() {
+    return {
+      clusterHost: RTVS_HOST,
+      clusterPort: RTVS_PORT,
+      protocol: 2,
+      isUseCdn: false,
+    };
+  }
+
   function getCvNet() {
     if (cvnet) return cvnet;
     if (typeof CvNetVideo === 'undefined') {
@@ -519,6 +528,16 @@ const talkback = (() => {
       remotePortWs: RTVS_TALK_PORT,  // talkback server port (separate from video port)
       protocol:     2,               // JT1078
       playerMode:   3,               // Wasm → uses remotePortWs, processes JT1078 audio
+      networkSpeaking: true,
+      events: {
+        onStartSpeek: () => {
+          if (activeTile) activeTile.el.querySelector('.tile-btn--talk').classList.add('tile-btn--talk-active');
+        },
+        onMicError: err => {
+          console.warn('talkback mic error:', err);
+          stop();
+        },
+      },
     });
     return cvnet;
   }
@@ -594,7 +613,11 @@ const talkback = (() => {
     activeTile = tile;
     tile.el.querySelector('.tile-btn--talk').classList.add('tile-btn--talk-active');
     try {
-      sdk.StartSpeek(tile.terminalId, tile.channelId);
+      const ok = sdk.StartSpeek(tile.terminalId, tile.channelId, talkbackOptions());
+      if (ok === false) {
+        console.warn('StartSpeek returned false');
+        stop();
+      }
     } catch (e) {
       console.error('StartSpeek failed:', e);
       stop();
