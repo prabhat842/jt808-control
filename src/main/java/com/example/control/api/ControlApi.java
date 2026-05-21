@@ -15,6 +15,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 @RestController
 @RequestMapping("/api")
@@ -77,41 +78,50 @@ public class ControlApi {
         return orchestrator.streamLogs(id);
     }
 
-    // ── Media proxy (forward to RTVS) ─────────────────────────────────────
+    // ── Media proxy (async, non-blocking — RTVS unavailability never ties up Tomcat threads) ──
 
     @GetMapping(value = "/terminals", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<String> terminals() {
-        return proxyGet(rtvsUrl + "/api/terminals");
+    public CompletableFuture<ResponseEntity<String>> terminals() {
+        return proxyAsync(rtvsUrl + "/api/terminals");
     }
 
     @GetMapping(value = "/sessions", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<String> sessions() {
-        return proxyGet(rtvsUrl + "/api/sessions");
+    public CompletableFuture<ResponseEntity<String>> sessions() {
+        return proxyAsync(rtvsUrl + "/api/sessions");
     }
 
     @GetMapping(value = "/live/start", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<String> liveStart(HttpServletRequest req) {
+    public CompletableFuture<ResponseEntity<String>> liveStart(HttpServletRequest req) {
         String qs = req.getQueryString();
-        return proxyGet(rtvsUrl + "/api/live/start" + (qs != null ? "?" + qs : ""));
+        return proxyAsync(rtvsUrl + "/api/live/start" + (qs != null ? "?" + qs : ""));
     }
 
     @GetMapping(value = "/live/stop", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<String> liveStop(HttpServletRequest req) {
+    public CompletableFuture<ResponseEntity<String>> liveStop(HttpServletRequest req) {
         String qs = req.getQueryString();
-        return proxyGet(rtvsUrl + "/api/live/stop" + (qs != null ? "?" + qs : ""));
+        return proxyAsync(rtvsUrl + "/api/live/stop" + (qs != null ? "?" + qs : ""));
     }
 
-    private ResponseEntity<String> proxyGet(String url) {
-        try {
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .timeout(Duration.ofSeconds(2)).GET().build();
-            HttpResponse<String> resp = http.send(request, HttpResponse.BodyHandlers.ofString());
-            return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(resp.body());
-        } catch (Exception e) {
-            String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON)
-                    .body("{\"error\":\"" + msg.replace("\"", "'") + "\"}");
-        }
+    /**
+     * Non-blocking proxy to RTVS. Returns a CompletableFuture so Spring MVC releases
+     * the Tomcat thread immediately; the response is written when the future completes.
+     * RTVS being slow or unreachable never ties up worker threads.
+     */
+    private CompletableFuture<ResponseEntity<String>> proxyAsync(String url) {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .timeout(Duration.ofSeconds(2)).GET().build();
+        return http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .thenApply(resp -> ResponseEntity.ok()
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(resp.body()))
+                .exceptionally(ex -> {
+                    Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                    String msg = cause.getMessage() != null
+                            ? cause.getMessage() : cause.getClass().getSimpleName();
+                    return ResponseEntity.ok()
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .body("{\"error\":\"" + msg.replace("\"", "'") + "\"}");
+                });
     }
 }
