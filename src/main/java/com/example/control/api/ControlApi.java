@@ -105,12 +105,13 @@ public class ControlApi {
         try {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
-                    .timeout(Duration.ofSeconds(5)).GET().build();
+                    .timeout(Duration.ofSeconds(2)).GET().build();
             HttpResponse<String> resp = http.send(request, HttpResponse.BodyHandlers.ofString());
             return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(resp.body());
         } catch (Exception e) {
+            String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
             return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON)
-                    .body("{\"error\":\"" + e.getMessage().replace("\"", "'") + "\"}");
+                    .body("{\"error\":\"" + msg.replace("\"", "'") + "\"}");
         }
     }
 }

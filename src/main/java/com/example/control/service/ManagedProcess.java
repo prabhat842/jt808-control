@@ -43,9 +43,10 @@ public final class ManagedProcess {
         }
         state = State.STARTING;
 
-        // Kill any orphan process running the same JAR (manually-started or leftover from a crash).
-        // Port-independent: works regardless of which port the service is configured to use.
+        // Kill any orphan running the same JAR before binding to the port.
+        // Runs synchronously so the new process doesn't race with the dying orphan.
         evictOrphan(def.getJar());
+        appendLog("--- starting " + def.getName() + " ---");
 
         List<String> cmd = new ArrayList<>();
         cmd.add("java");
