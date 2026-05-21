@@ -11,7 +11,6 @@ public class ServiceDefinition {
     private List<String> args = List.of();
     private String workDir;
     private int displayOrder;
-    private int port = 0; // HTTP/management port; 0 = not configured
 
     public String getId()          { return id; }
     public void setId(String id)   { this.id = id; }
@@ -36,7 +35,4 @@ public class ServiceDefinition {
 
     public int  getDisplayOrder()             { return displayOrder; }
     public void setDisplayOrder(int order)    { this.displayOrder = order; }
-
-    public int  getPort()                     { return port; }
-    public void setPort(int port)             { this.port = port; }
 }

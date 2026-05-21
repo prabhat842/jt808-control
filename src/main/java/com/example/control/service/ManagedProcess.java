@@ -43,8 +43,9 @@ public final class ManagedProcess {
         }
         state = State.STARTING;
 
-        // Kill any orphan process holding the same port (including manually-started instances)
-        if (def.getPort() > 0) evictPort(def.getPort());
+        // Kill any orphan process running the same JAR (manually-started or leftover from a crash).
+        // Port-independent: works regardless of which port the service is configured to use.
+        evictOrphan(def.getJar());
 
         List<String> cmd = new ArrayList<>();
         cmd.add("java");
@@ -150,41 +151,40 @@ public final class ManagedProcess {
     public boolean isRunning()              { return state == State.RUNNING; }
 
     /**
-     * Kills any OS process currently bound to {@code port}, then waits up to
-     * 3 seconds for the port to be released. Handles orphaned managed processes
-     * and instances started manually outside the control panel.
+     * Kills any JVM process already running {@code jarPath}, then waits up to 3 s
+     * for it to exit. Port-independent: works regardless of how the service is
+     * configured, and handles instances started manually outside the control panel.
      */
-    private void evictPort(int port) {
+    private void evictOrphan(String jarPath) {
         try {
-            // lsof -ti:PORT prints the PID(s) of processes holding the port
-            Process lsof = new ProcessBuilder("lsof", "-ti:" + port)
+            // pgrep -f matches against the full command line
+            Process pgrep = new ProcessBuilder("pgrep", "-f", jarPath)
                     .redirectErrorStream(true).start();
-            String pids = new String(lsof.getInputStream().readAllBytes()).trim();
-            lsof.waitFor(3, TimeUnit.SECONDS);
+            String pids = new String(pgrep.getInputStream().readAllBytes()).trim();
+            pgrep.waitFor(3, TimeUnit.SECONDS);
             if (pids.isBlank()) return;
 
-            appendLog("--- evicting orphan on port " + port + " (pid " + pids.replace('\n', ' ') + ") ---");
+            long self = ProcessHandle.current().pid();
             for (String pidStr : pids.split("\\s+")) {
-                long orphanPid = Long.parseLong(pidStr.trim());
-                // Don't kill ourselves
-                if (orphanPid == ProcessHandle.current().pid()) continue;
+                pidStr = pidStr.trim();
+                if (pidStr.isEmpty()) continue;
+                long orphanPid = Long.parseLong(pidStr);
+                if (orphanPid == self) continue;
+                appendLog("--- evicting orphan pid=" + orphanPid + " running " + jarPath + " ---");
                 ProcessHandle.of(orphanPid).ifPresent(ph -> {
                     ph.destroy();
-                    try { Thread.sleep(500); } catch (InterruptedException ignored) {}
-                    if (ph.isAlive()) ph.destroyForcibly();
+                    try { Thread.sleep(800); } catch (InterruptedException ignored) {}
+                    if (ph.isAlive()) {
+                        appendLog("--- graceful timeout, force-killing pid=" + orphanPid + " ---");
+                        ph.destroyForcibly();
+                    }
                 });
             }
-            // Wait for port to be released (up to 3 s)
-            for (int i = 0; i < 6; i++) {
-                Thread.sleep(500);
-                Process check = new ProcessBuilder("lsof", "-ti:" + port)
-                        .redirectErrorStream(true).start();
-                String still = new String(check.getInputStream().readAllBytes()).trim();
-                check.waitFor(2, TimeUnit.SECONDS);
-                if (still.isBlank()) break;
-            }
+            // Give the OS a moment to reclaim the port(s)
+            Thread.sleep(500);
         } catch (Exception e) {
-            log.warn("evictPort({}) failed: {}", port, e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+            log.warn("evictOrphan({}) failed: {}", jarPath,
+                    e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
         }
     }
 
