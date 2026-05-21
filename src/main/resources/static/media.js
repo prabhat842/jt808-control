@@ -3,8 +3,9 @@
 // ── constants ─────────────────────────────────────────────────────────────
 const NUM_TILES   = 4;
 const DMS_URL     = 'http://localhost:7500/dms/state';
-const RTVS_HOST   = location.hostname;   // RTVS runs on same host
-const RTVS_PORT   = 8089;
+const RTVS_HOST      = location.hostname;  // RTVS runs on same host
+const RTVS_PORT      = 8089;              // studio HTTP + /ws video
+const RTVS_TALK_PORT = 8090;              // talkback WebSocket (CVNet connects here)
 const ALARM_NAMES = { 0:'none', 1:'fatigue', 2:'distraction', 5:'no seatbelt', 6:'cam blocked' };
 const MAX_CHANNELS = 6;
 
@@ -448,10 +449,10 @@ const talkback = (() => {
     cvnet = CvNetVideo.Init(container, 1, {
       usingCluster: false,
       clusterHost:  RTVS_HOST,
-      clusterPort:  RTVS_PORT,
-      remotePortWs: RTVS_PORT,   // used by Wasm/WebCodec playerMode
-      protocol:     2,           // JT1078
-      playerMode:   3,           // Wasm → uses remotePortWs, processes JT1078 audio
+      clusterPort:  RTVS_TALK_PORT,
+      remotePortWs: RTVS_TALK_PORT,  // talkback server port (separate from video port)
+      protocol:     2,               // JT1078
+      playerMode:   3,               // Wasm → uses remotePortWs, processes JT1078 audio
     });
     return cvnet;
   }
