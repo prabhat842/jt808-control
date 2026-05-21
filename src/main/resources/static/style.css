@@ -229,33 +229,28 @@ main { padding: 1.5rem 2rem; display: flex; flex-direction: column; gap: 1.25rem
 .log-box::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
 /* ── Media page ─────────────────────────────────────────────────────── */
-.media-shell {
+.page--media { padding: 0; gap: 0; }
+.page--media.active {
   display: flex;
-  flex-direction: column;
-  min-height: calc(100vh - 126px);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
-.media-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: .875rem 1.1rem;
-  border-bottom: 1px solid var(--border);
-}
-.media-header h2 { font-size: .9rem; font-weight: 600; }
-.media-header p { color: var(--muted); font-size: .72rem; margin-top: 2px; }
-.media-actions { display: flex; align-items: center; gap: .5rem; }
-.media-link { text-decoration: none; display: inline-flex; align-items: center; }
-.media-frame {
-  width: 100%;
+.media-wall {
   flex: 1;
-  min-height: 680px;
-  border: 0;
-  background: #080c12;
+  min-height: 0;
+  overflow: hidden;
+}
+body.media-active {
+  overflow: hidden;
+  height: 100vh;
+}
+body.media-active main {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
 }
 
 @media (max-width: 760px) {

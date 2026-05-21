@@ -30,11 +30,7 @@ function showPage(page) {
   document.getElementById('mediaPage').classList.toggle('active', page === 'media');
   document.getElementById('servicesTab').classList.toggle('active', page === 'services');
   document.getElementById('mediaTab').classList.toggle('active', page === 'media');
-}
-
-function reloadMediaFrame() {
-  const frame = document.getElementById('mediaFrame');
-  frame.src = frame.src;
+  document.body.classList.toggle('media-active', page === 'media');
 }
 
 // ── Status polling ────────────────────────────────────────────────────────
