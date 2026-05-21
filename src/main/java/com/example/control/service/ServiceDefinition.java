@@ -6,10 +6,11 @@ public class ServiceDefinition {
     private String id;
     private String name;
     private String description;
+    private String group = "infrastructure"; // "vehicle" | "infrastructure"
     private String jar;
     private List<String> args = List.of();
     private String workDir;
-    private int startOrder;
+    private int displayOrder;
 
     public String getId()          { return id; }
     public void setId(String id)   { this.id = id; }
@@ -29,6 +30,9 @@ public class ServiceDefinition {
     public String getWorkDir()              { return workDir; }
     public void setWorkDir(String workDir)  { this.workDir = workDir; }
 
-    public int getStartOrder()               { return startOrder; }
-    public void setStartOrder(int order)     { this.startOrder = order; }
+    public String getGroup()                  { return group; }
+    public void   setGroup(String group)      { this.group = group; }
+
+    public int  getDisplayOrder()             { return displayOrder; }
+    public void setDisplayOrder(int order)    { this.displayOrder = order; }
 }

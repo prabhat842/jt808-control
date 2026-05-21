@@ -14,59 +14,95 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+/**
+ * Manages the JT808 stack lifecycle.
+ *
+ * Architecture:
+ *  - Vehicle services (simulator + DMS/ADAS/BSD) are INDEPENDENT.
+ *    A driver starts the vehicle at any time; camera and sensors are always on.
+ *    The terminal reconnects to the server automatically whenever it is available.
+ *
+ *  - Infrastructure services (server, rtvs) are also independent of each other
+ *    and of the vehicle. They can be restarted without restarting the vehicle.
+ *
+ * startAll()  → starts all services concurrently with no imposed ordering.
+ * stopAll()   → stops vehicle services first (clean logout), then infrastructure.
+ */
 @Service
 public class ProcessOrchestrator {
     private static final Logger log = LoggerFactory.getLogger(ProcessOrchestrator.class);
 
     private final Map<String, ManagedProcess> processes;
-    private final List<ManagedProcess> ordered; // sorted by startOrder
+    private final List<ManagedProcess> displayOrder;
 
     public ProcessOrchestrator(List<ServiceDefinition> definitions) {
         processes = definitions.stream()
                 .collect(Collectors.toMap(ServiceDefinition::getId, ManagedProcess::new));
-        ordered = definitions.stream()
-                .sorted(Comparator.comparingInt(ServiceDefinition::getStartOrder))
+        displayOrder = definitions.stream()
+                .sorted(Comparator.comparingInt(ServiceDefinition::getDisplayOrder))
                 .map(d -> processes.get(d.getId()))
                 .toList();
     }
 
     public void start(String id) throws Exception {
-        ManagedProcess mp = require(id);
-        mp.start();
+        require(id).start();
     }
 
     public void stop(String id) {
         require(id).stop();
     }
 
+    /**
+     * Start all services concurrently — no stagger, no ordering dependency.
+     * Vehicle services connect to infrastructure when it becomes available.
+     */
     public void startAll() {
-        for (ManagedProcess mp : ordered) {
-            try {
-                mp.start();
-                Thread.sleep(1500); // stagger startup
-            } catch (Exception e) {
-                log.error("Failed to start {}: {}", mp.definition().getName(), e.getMessage());
-            }
-        }
+        displayOrder.forEach(mp -> {
+            Thread t = Thread.ofVirtual().name("start-" + mp.definition().getId()).start(() -> {
+                try {
+                    mp.start();
+                } catch (Exception e) {
+                    log.error("Failed to start {}: {}", mp.definition().getName(), e.getMessage());
+                }
+            });
+        });
     }
 
+    /**
+     * Stop in logical order: vehicle terminals first (sends JT808 logout),
+     * then infrastructure (server, rtvs).
+     */
     public void stopAll() {
-        // stop in reverse start order
-        for (int i = ordered.size() - 1; i >= 0; i--) {
-            ordered.get(i).stop();
-        }
+        List<ManagedProcess> vehicle = byGroup("vehicle");
+        List<ManagedProcess> infra   = byGroup("infrastructure");
+
+        // Vehicle first — terminals log out gracefully per protocol
+        vehicle.forEach(mp -> Thread.ofVirtual().name("stop-" + mp.definition().getId()).start(mp::stop));
+        vehicle.stream().map(mp -> mp.definition().getId()).forEach(id -> {
+            // give each vehicle process time to send logout before cutting infrastructure
+        });
+
+        // Brief pause so terminals can send 0x0003 logout before server closes
+        try { Thread.sleep(2000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+
+        // Infrastructure stops — server closes, rtvs closes
+        infra.forEach(mp -> Thread.ofVirtual().name("stop-" + mp.definition().getId()).start(mp::stop));
     }
 
     public void restartAll() {
-        stopAll();
-        startAll();
+        Thread.ofVirtual().name("restart-all").start(() -> {
+            stopAll();
+            try { Thread.sleep(1000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            startAll();
+        });
     }
 
     public List<StatusDto> status() {
-        return ordered.stream().map(mp -> new StatusDto(
+        return displayOrder.stream().map(mp -> new StatusDto(
                 mp.definition().getId(),
                 mp.definition().getName(),
                 mp.definition().getDescription(),
+                mp.definition().getGroup(),
                 mp.getState().name(),
                 mp.getPid(),
                 mp.getStartedAt() != null ? mp.getStartedAt().toString() : null
@@ -79,7 +115,7 @@ public class ProcessOrchestrator {
 
     @PreDestroy
     public void shutdown() {
-        log.info("Control panel shutting down — stopping all services");
+        log.info("Control panel shutting down — stopping all managed services");
         stopAll();
     }
 
@@ -89,8 +125,14 @@ public class ProcessOrchestrator {
         return mp;
     }
 
+    private List<ManagedProcess> byGroup(String group) {
+        return displayOrder.stream()
+                .filter(mp -> group.equals(mp.definition().getGroup()))
+                .toList();
+    }
+
     public record StatusDto(
-            String id, String name, String description,
+            String id, String name, String description, String group,
             String state, long pid, String startedAt) {}
 
     @Configuration

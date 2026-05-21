@@ -12,32 +12,40 @@ logging:
     com.example.control: INFO
 
 services:
-  - id: server
-    name: JT808 Server
-    description: "JT808 signaling — terminals connect here"
-    jar: /home/prabhat/jt808-server/target/jt808-server-0.1.0-SNAPSHOT.jar
-    args:
-      - "--config"
-      - "/home/prabhat/jt808-server/config/server.json"
-    workDir: /home/prabhat/jt808-server
-    startOrder: 1
-
-  - id: rtvs
-    name: RTVS Media Server
-    description: "JT1078 ingest + browser studio"
-    jar: /home/prabhat/jt808-rtvs/target/jt808-rtvs-0.1.0-SNAPSHOT.jar
-    args:
-      - "--config"
-      - "/home/prabhat/jt808-rtvs/config/rtvs.json"
-    workDir: /home/prabhat/jt808-rtvs
-    startOrder: 2
-
+  # ── Vehicle terminal ─────────────────────────────────────────────────────
+  # Starts independently. DMS/ADAS/BSD run immediately on startup.
+  # Connects to server automatically whenever it becomes available.
   - id: simulator
     name: Fleet Simulator
-    description: "Vehicle terminal simulator with live camera"
+    description: "Vehicle terminal · DMS/ADAS/BSD · auto-connects to server"
+    group: vehicle
     jar: /home/prabhat/jt808/target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar
     args:
       - "--config"
       - "config/camera-host.json"
     workDir: /home/prabhat/jt808
-    startOrder: 3
+    displayOrder: 1
+
+  # ── Infrastructure ───────────────────────────────────────────────────────
+  # Can start/stop without affecting vehicle functions.
+  - id: server
+    name: JT808 Server
+    description: "JT808 signaling · terminals connect here when ready"
+    group: infrastructure
+    jar: /home/prabhat/jt808-server/target/jt808-server-0.1.0-SNAPSHOT.jar
+    args:
+      - "--config"
+      - "/home/prabhat/jt808-server/config/server.json"
+    workDir: /home/prabhat/jt808-server
+    displayOrder: 2
+
+  - id: rtvs
+    name: RTVS Media Server
+    description: "JT1078 media ingest · browser studio"
+    group: infrastructure
+    jar: /home/prabhat/jt808-rtvs/target/jt808-rtvs-0.1.0-SNAPSHOT.jar
+    args:
+      - "--config"
+      - "/home/prabhat/jt808-rtvs/config/rtvs.json"
+    workDir: /home/prabhat/jt808-rtvs
+    displayOrder: 3
