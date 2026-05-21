@@ -1,0 +1,43 @@
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    com.example.control: INFO
+
+services:
+  - id: server
+    name: JT808 Server
+    description: "JT808 signaling — terminals connect here"
+    jar: /home/prabhat/jt808-server/target/jt808-server-0.1.0-SNAPSHOT.jar
+    args:
+      - "--config"
+      - "/home/prabhat/jt808-server/config/server.json"
+    workDir: /home/prabhat/jt808-server
+    startOrder: 1
+
+  - id: rtvs
+    name: RTVS Media Server
+    description: "JT1078 ingest + browser studio"
+    jar: /home/prabhat/jt808-rtvs/target/jt808-rtvs-0.1.0-SNAPSHOT.jar
+    args:
+      - "--config"
+      - "/home/prabhat/jt808-rtvs/config/rtvs.json"
+    workDir: /home/prabhat/jt808-rtvs
+    startOrder: 2
+
+  - id: simulator
+    name: Fleet Simulator
+    description: "Vehicle terminal simulator with live camera"
+    jar: /home/prabhat/jt808/target/jt808-fleet-simulator-0.1.0-SNAPSHOT.jar
+    args:
+      - "--config"
+      - "config/camera-host.json"
+    workDir: /home/prabhat/jt808
+    startOrder: 3

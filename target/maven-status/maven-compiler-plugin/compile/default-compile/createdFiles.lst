@@ -1,0 +1,8 @@
+com/example/control/service/ProcessOrchestrator$ServiceConfig.class
+com/example/control/service/ServiceDefinition.class
+com/example/control/service/ManagedProcess.class
+com/example/control/service/ProcessOrchestrator.class
+com/example/control/service/ManagedProcess$State.class
+com/example/control/api/ControlApi.class
+com/example/control/ControlPanelApplication.class
+com/example/control/service/ProcessOrchestrator$StatusDto.class

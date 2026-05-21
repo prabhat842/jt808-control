@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>JT808 Control Panel</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <div class="logo">JT808</div>
+      <div>
+        <h1>Control Panel</h1>
+        <p class="subtitle">Fleet management stack</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <span class="panel-status" id="panelStatus">connecting…</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Service cards -->
+    <section class="services" id="serviceCards"></section>
+
+    <!-- Global actions -->
+    <section class="actions">
+      <button class="btn btn-primary" onclick="api('start-all')">▶ Start All</button>
+      <button class="btn btn-danger"  onclick="api('stop-all')">■ Stop All</button>
+      <button class="btn btn-secondary" onclick="api('restart-all')">↺ Restart All</button>
+    </section>
+
+    <!-- Log viewer -->
+    <section class="log-section">
+      <div class="log-header">
+        <h2>Live Logs</h2>
+        <div class="log-tabs" id="logTabs"></div>
+        <div class="log-controls">
+          <label class="toggle-label">
+            <input type="checkbox" id="autoScroll" checked> Auto-scroll
+          </label>
+          <button class="btn btn-sm" onclick="clearLog()">Clear</button>
+        </div>
+      </div>
+      <div class="log-box" id="logBox"></div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
