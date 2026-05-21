@@ -5,6 +5,7 @@
 let services    = [];
 let activeLogId = null;
 let sseSource   = null;
+let activePage  = 'services';
 
 // ── API ───────────────────────────────────────────────────────────────────
 
@@ -21,6 +22,19 @@ async function api(action, id) {
 function apiGroup(action, group) {
   const targets = services.filter(s => s.group === group);
   targets.forEach(s => api(action, s.id));
+}
+
+function showPage(page) {
+  activePage = page;
+  document.getElementById('servicesPage').classList.toggle('active', page === 'services');
+  document.getElementById('mediaPage').classList.toggle('active', page === 'media');
+  document.getElementById('servicesTab').classList.toggle('active', page === 'services');
+  document.getElementById('mediaTab').classList.toggle('active', page === 'media');
+}
+
+function reloadMediaFrame() {
+  const frame = document.getElementById('mediaFrame');
+  frame.src = frame.src;
 }
 
 // ── Status polling ────────────────────────────────────────────────────────

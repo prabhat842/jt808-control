@@ -16,11 +16,16 @@
       </div>
     </div>
     <div class="header-right">
+      <nav class="top-nav" aria-label="Control panel sections">
+        <button class="nav-tab active" id="servicesTab" onclick="showPage('services')">Services</button>
+        <button class="nav-tab" id="mediaTab" onclick="showPage('media')">Media</button>
+      </nav>
       <span class="panel-badge" id="panelStatus">connecting…</span>
     </div>
   </header>
 
   <main>
+  <section id="servicesPage" class="page active">
 
     <!-- Vehicle section -->
     <section class="tier">
@@ -82,6 +87,24 @@
         <div class="log-placeholder">Select a service tab above to stream its logs</div>
       </div>
     </section>
+
+  </section>
+
+  <section id="mediaPage" class="page">
+    <section class="media-shell">
+      <div class="media-header">
+        <div>
+          <h2>Media Studio</h2>
+          <p>Live video, stream start/stop, and DMS status from RTVS.</p>
+        </div>
+        <div class="media-actions">
+          <button class="btn btn-secondary" onclick="reloadMediaFrame()">Reload media</button>
+          <a class="btn btn-primary media-link" href="http://localhost:8089" target="_blank" rel="noopener">Open full page</a>
+        </div>
+      </div>
+      <iframe id="mediaFrame" class="media-frame" src="http://localhost:8089" title="RTVS Media Studio"></iframe>
+    </section>
+  </section>
 
   </main>
 
