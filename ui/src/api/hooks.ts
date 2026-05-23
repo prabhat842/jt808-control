@@ -360,6 +360,50 @@ export function useDeleteDriverProfile() {
   })
 }
 
+export function useCreateParameterProfile() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: Partial<ParameterProfile> & { orgId: string; profileName: string }) =>
+      client.post('/registry/parameter-profiles', payload).then(r => r.data),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['registry-parameter-profiles'] }),
+        qc.invalidateQueries({ queryKey: ['registry-summary'] }),
+        qc.invalidateQueries({ queryKey: ['registry-org-units'] }),
+      ])
+    },
+  })
+}
+
+export function useUpdateParameterProfile() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ profileId, payload }: { profileId: string; payload: Partial<ParameterProfile> & { orgId: string; profileName: string } }) =>
+      client.put(`/registry/parameter-profiles/${encodeURIComponent(profileId)}`, payload).then(r => r.data),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['registry-parameter-profiles'] }),
+        qc.invalidateQueries({ queryKey: ['registry-summary'] }),
+        qc.invalidateQueries({ queryKey: ['registry-org-units'] }),
+      ])
+    },
+  })
+}
+
+export function useDeleteParameterProfile() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (profileId: string) => client.delete(`/registry/parameter-profiles/${encodeURIComponent(profileId)}`).then(r => r.data),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['registry-parameter-profiles'] }),
+        qc.invalidateQueries({ queryKey: ['registry-summary'] }),
+        qc.invalidateQueries({ queryKey: ['registry-org-units'] }),
+      ])
+    },
+  })
+}
+
 export function useVehicleAssets() {
   return useQuery<VehicleAsset[]>({
     queryKey: ['registry-vehicles'],

@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   useCreateDriverProfile,
+  useCreateParameterProfile,
   useCreateVehicleAsset,
   useCreateOrgUnit,
   useCreateRegistryDevice,
   useDeleteDriverProfile,
+  useDeleteParameterProfile,
   useDeleteVehicleAsset,
   useDeleteOrgUnit,
   useDeleteRegistryDevice,
@@ -16,14 +18,15 @@ import {
   useTerminals,
   useUpdateDriverProfile,
   useUpdateOrgUnit,
+  useUpdateParameterProfile,
   useUpdateVehicleAsset,
   useUpdateRegistryDevice,
   useVehicleAssets,
 } from '../../api/hooks'
-import type { DriverProfile, OrgUnit, RegistryDevice, VehicleAsset } from '../../types'
+import type { DriverProfile, OrgUnit, ParameterProfile, RegistryDevice, VehicleAsset } from '../../types'
 
 type Section = 'devices' | 'organizations' | 'vehicles' | 'drivers' | 'parameters'
-type EditorKind = 'org' | 'device' | 'vehicle' | 'driver'
+type EditorKind = 'org' | 'device' | 'vehicle' | 'driver' | 'parameter'
 
 type EditorState =
   | { kind: 'org'; mode: 'create'; org?: OrgUnit }
@@ -34,6 +37,8 @@ type EditorState =
   | { kind: 'vehicle'; mode: 'edit'; vehicle: VehicleAsset }
   | { kind: 'driver'; mode: 'create'; driver?: DriverProfile }
   | { kind: 'driver'; mode: 'edit'; driver: DriverProfile }
+  | { kind: 'parameter'; mode: 'create'; profile?: ParameterProfile }
+  | { kind: 'parameter'; mode: 'edit'; profile: ParameterProfile }
 
 type OrgDraft = {
   parentOrgId: string
@@ -83,6 +88,13 @@ type DriverDraft = {
   qualificationExpiresOn: string
   employmentStatus: string
   riskLabel: string
+}
+
+type ParameterDraft = {
+  orgId: string
+  profileName: string
+  description: string
+  profileStatus: string
 }
 
 const SECTIONS: { id: Section; label: string }[] = [
@@ -143,11 +155,18 @@ const EMPTY_DRIVER: DriverDraft = {
   riskLabel: 'normal',
 }
 
+const EMPTY_PARAMETER: ParameterDraft = {
+  orgId: '',
+  profileName: '',
+  description: '',
+  profileStatus: 'draft',
+}
+
 export default function ManagementPage() {
   const [section, setSection] = useState<Section>('devices')
   const [search, setSearch] = useState('')
   const [editor, setEditor] = useState<EditorState | null>(null)
-  const [draft, setDraft] = useState<OrgDraft | DeviceDraft | VehicleDraft | DriverDraft>(EMPTY_ORG)
+  const [draft, setDraft] = useState<OrgDraft | DeviceDraft | VehicleDraft | DriverDraft | ParameterDraft>(EMPTY_ORG)
   const [error, setError] = useState<string | null>(null)
 
   const { data: summary } = useRegistrySummary()
@@ -165,6 +184,9 @@ export default function ManagementPage() {
   const createDriver = useCreateDriverProfile()
   const updateDriver = useUpdateDriverProfile()
   const deleteDriver = useDeleteDriverProfile()
+  const createParameter = useCreateParameterProfile()
+  const updateParameter = useUpdateParameterProfile()
+  const deleteParameter = useDeleteParameterProfile()
 
   useEffect(() => {
     if (!editor) {
@@ -212,7 +234,7 @@ export default function ManagementPage() {
         capacityTons: vehicle.capacityTons == null ? '' : String(vehicle.capacityTons),
         operationStatus: vehicle.operationStatus ?? 'active',
       } : EMPTY_VEHICLE)
-    } else {
+    } else if (editor.kind === 'driver') {
       const driver = editor.mode === 'edit' ? editor.driver : editor.driver
       setDraft(driver ? {
         orgId: driver.orgId ?? '',
@@ -226,6 +248,14 @@ export default function ManagementPage() {
         employmentStatus: driver.employmentStatus ?? 'active',
         riskLabel: driver.riskLabel ?? 'normal',
       } : EMPTY_DRIVER)
+    } else {
+      const profile = editor.mode === 'edit' ? editor.profile : editor.profile
+      setDraft(profile ? {
+        orgId: profile.orgId ?? '',
+        profileName: profile.profileName ?? '',
+        description: profile.description ?? '',
+        profileStatus: profile.profileStatus ?? 'draft',
+      } : EMPTY_PARAMETER)
     }
   }, [editor])
 
@@ -236,8 +266,6 @@ export default function ManagementPage() {
     drivers: 'Drivers',
     parameters: 'Parameters',
   }[section]
-
-  const canCreate = section !== 'parameters'
 
   async function saveEditor() {
     try {
@@ -302,7 +330,7 @@ export default function ManagementPage() {
         } else {
           await updateVehicle.mutateAsync({ vehicleId: editor.vehicle.vehicleId, payload })
         }
-      } else {
+      } else if (editor.kind === 'driver') {
         const body = draft as DriverDraft
         const payload = {
           orgId: body.orgId.trim(),
@@ -321,6 +349,19 @@ export default function ManagementPage() {
         } else {
           await updateDriver.mutateAsync({ driverId: editor.driver.driverId, payload })
         }
+      } else {
+        const body = draft as ParameterDraft
+        const payload = {
+          orgId: body.orgId.trim(),
+          profileName: body.profileName.trim(),
+          description: blank(body.description),
+          profileStatus: body.profileStatus,
+        }
+        if (editor.mode === 'create') {
+          await createParameter.mutateAsync(payload)
+        } else {
+          await updateParameter.mutateAsync({ profileId: editor.profile.profileId, payload })
+        }
       }
       setEditor(null)
     } catch (err) {
@@ -329,14 +370,15 @@ export default function ManagementPage() {
   }
 
   async function removeEditor(kind: EditorKind, id: string) {
-    const ok = window.confirm(`Delete this ${kind === 'org' ? 'organization' : kind === 'device' ? 'device' : kind === 'vehicle' ? 'vehicle' : 'driver'}?`)
+    const ok = window.confirm(`Delete this ${kind === 'org' ? 'organization' : kind === 'device' ? 'device' : kind === 'vehicle' ? 'vehicle' : kind === 'driver' ? 'driver' : 'parameter profile'}?`)
     if (!ok) return
     try {
       setError(null)
       if (kind === 'org') await deleteOrg.mutateAsync(id)
       else if (kind === 'device') await deleteDevice.mutateAsync(id)
       else if (kind === 'vehicle') await deleteVehicle.mutateAsync(id)
-      else await deleteDriver.mutateAsync(id)
+      else if (kind === 'driver') await deleteDriver.mutateAsync(id)
+      else await deleteParameter.mutateAsync(id)
     } catch (err) {
       setError(readError(err))
     }
@@ -366,12 +408,12 @@ export default function ManagementPage() {
           />
           <button
             className="btn-secondary"
-            disabled={!canCreate}
             onClick={() => {
               if (section === 'devices') setEditor({ kind: 'device', mode: 'create' })
               else if (section === 'organizations') setEditor({ kind: 'org', mode: 'create' })
               else if (section === 'vehicles') setEditor({ kind: 'vehicle', mode: 'create' })
               else if (section === 'drivers') setEditor({ kind: 'driver', mode: 'create' })
+              else setEditor({ kind: 'parameter', mode: 'create' })
             }}
           >
             Add
@@ -449,7 +491,14 @@ export default function ManagementPage() {
             onDelete={driverId => void removeEditor('driver', driverId)}
           />
         )}
-        {section === 'parameters' && <ParametersTable search={search} />}
+        {section === 'parameters' && (
+          <ParametersTable
+            search={search}
+            onCreate={() => setEditor({ kind: 'parameter', mode: 'create' })}
+            onEdit={profile => setEditor({ kind: 'parameter', mode: 'edit', profile })}
+            onDelete={profileId => void removeEditor('parameter', profileId)}
+          />
+        )}
       </div>
 
       {editor && (
@@ -466,7 +515,9 @@ export default function ManagementPage() {
             createVehicle.isPending ||
             updateVehicle.isPending ||
             createDriver.isPending ||
-            updateDriver.isPending
+            updateDriver.isPending ||
+            createParameter.isPending ||
+            updateParameter.isPending
           }
           onClose={() => setEditor(null)}
           onSubmit={saveEditor}
@@ -650,7 +701,17 @@ function DriversTable({
   )
 }
 
-function ParametersTable({ search }: { search: string }) {
+function ParametersTable({
+  search,
+  onCreate,
+  onEdit,
+  onDelete,
+}: {
+  search: string
+  onCreate: () => void
+  onEdit: (profile: ParameterProfile) => void
+  onDelete: (profileId: string) => void
+}) {
   const { data: profiles = [], isLoading } = useParameterProfiles()
   const rows = filterRows(profiles, search, p => [
     p.profileName, p.orgName, p.profileStatus, p.description,
@@ -660,14 +721,22 @@ function ParametersTable({ search }: { search: string }) {
     <RegistryTable
       loading={isLoading}
       empty="No parameter profiles"
-      headers={['Profile', 'Organization', 'Items', 'Description', 'Status']}
+      headers={['Profile', 'Organization', 'Items', 'Description', 'Status', 'Actions']}
       rows={rows.map(p => [
         <Mono key="profile" strong>{p.profileName}</Mono>,
         p.orgName,
         String(p.itemCount),
         p.description ?? '-',
         <StatusPill key="status" label={p.profileStatus} tone={p.profileStatus === 'active' ? 'ok' : 'muted'} />,
+        <RowActions
+          key="actions"
+          onEdit={() => onEdit(p)}
+          onDelete={() => onDelete(p.profileId)}
+          canDelete={p.itemCount === 0}
+        />,
       ])}
+      onCreate={onCreate}
+      createLabel="Add profile"
     />
   )
 }
@@ -759,13 +828,13 @@ function EditorDialog({
   onChange,
 }: {
   editor: EditorState
-  draft: OrgDraft | DeviceDraft | VehicleDraft | DriverDraft
+  draft: OrgDraft | DeviceDraft | VehicleDraft | DriverDraft | ParameterDraft
   orgOptions: OrgUnit[]
   deviceOptions: RegistryDevice[]
   busy: boolean
   onClose: () => void
   onSubmit: () => void
-  onChange: (draft: OrgDraft | DeviceDraft | VehicleDraft | DriverDraft) => void
+  onChange: (draft: OrgDraft | DeviceDraft | VehicleDraft | DriverDraft | ParameterDraft) => void
 }) {
   const title = editor.kind === 'org'
     ? editor.mode === 'create' ? 'Add organization' : 'Edit organization'
@@ -773,7 +842,9 @@ function EditorDialog({
       ? editor.mode === 'create' ? 'Add device' : 'Edit device'
       : editor.kind === 'vehicle'
         ? editor.mode === 'create' ? 'Add vehicle' : 'Edit vehicle'
-        : editor.mode === 'create' ? 'Add driver' : 'Edit driver'
+        : editor.kind === 'driver'
+          ? editor.mode === 'create' ? 'Add driver' : 'Edit driver'
+          : editor.mode === 'create' ? 'Add parameter profile' : 'Edit parameter profile'
 
   return (
     <div
@@ -815,8 +886,10 @@ function EditorDialog({
             <DeviceForm draft={draft as DeviceDraft} orgOptions={orgOptions} onChange={next => onChange(next)} />
           ) : editor.kind === 'vehicle' ? (
             <VehicleForm draft={draft as VehicleDraft} orgOptions={orgOptions} deviceOptions={deviceOptions} onChange={next => onChange(next)} />
-          ) : (
+          ) : editor.kind === 'driver' ? (
             <DriverForm draft={draft as DriverDraft} orgOptions={orgOptions} onChange={next => onChange(next)} />
+          ) : (
+            <ParameterForm draft={draft as ParameterDraft} orgOptions={orgOptions} onChange={next => onChange(next)} />
           )}
 
           <div className="flex items-center justify-end gap-2 pt-2">
@@ -1075,6 +1148,46 @@ function DriverForm({
           <option value="watch">watch</option>
           <option value="high_risk">high_risk</option>
         </select>
+      </Field>
+    </div>
+  )
+}
+
+function ParameterForm({
+  draft,
+  orgOptions,
+  onChange,
+}: {
+  draft: ParameterDraft
+  orgOptions: OrgUnit[]
+  onChange: (next: ParameterDraft) => void
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <Field label="Organization">
+        <select value={draft.orgId} onChange={e => onChange({ ...draft, orgId: e.target.value })}>
+          <option value="">Select organization</option>
+          {orgOptions.map(org => (
+            <option key={org.orgId} value={org.orgId}>{org.orgName}</option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Profile name">
+        <input value={draft.profileName} onChange={e => onChange({ ...draft, profileName: e.target.value })} placeholder="Default telemetry" />
+      </Field>
+      <Field label="Status">
+        <select value={draft.profileStatus} onChange={e => onChange({ ...draft, profileStatus: e.target.value })}>
+          <option value="draft">draft</option>
+          <option value="active">active</option>
+          <option value="archived">archived</option>
+        </select>
+      </Field>
+      <Field label="Description" className="col-span-2">
+        <textarea
+          value={draft.description}
+          onChange={e => onChange({ ...draft, description: e.target.value })}
+          rows={4}
+        />
       </Field>
     </div>
   )

@@ -552,6 +552,63 @@ public class RegistryApi {
         return ok(Map.of("result", "deleted", "driverId", driverId));
     }
 
+    @PostMapping("/parameter-profiles")
+    public ResponseEntity<Map<String, Object>> createParameterProfile(@RequestBody ParameterProfilePayload payload) {
+        String profileId = blankToNull(payload.profileId()) != null ? payload.profileId() : generateProfileId(payload.profileName());
+        validateParameterProfilePayload(payload, profileId);
+        if (exists("SELECT COUNT(*) FROM garuda_registry.terminal_parameter_profile WHERE profile_id = ?", profileId)) {
+            return conflict("parameter profile already exists: " + profileId);
+        }
+        jdbc.update("""
+                INSERT INTO garuda_registry.terminal_parameter_profile
+                    (profile_id, org_id, profile_name, description, profile_status)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                profileId,
+                payload.orgId().trim(),
+                payload.profileName().trim(),
+                blankToNull(payload.description()),
+                defaultIfBlank(payload.profileStatus(), "draft"));
+        return ok(Map.of("result", "created", "profileId", profileId));
+    }
+
+    @PutMapping("/parameter-profiles/{profileId}")
+    public ResponseEntity<Map<String, Object>> updateParameterProfile(
+            @PathVariable String profileId,
+            @RequestBody ParameterProfilePayload payload) {
+        validateParameterProfilePayload(payload, profileId);
+        if (!exists("SELECT COUNT(*) FROM garuda_registry.terminal_parameter_profile WHERE profile_id = ?", profileId)) {
+            return notFound("parameter profile not found: " + profileId);
+        }
+        jdbc.update("""
+                UPDATE garuda_registry.terminal_parameter_profile
+                   SET org_id = ?,
+                       profile_name = ?,
+                       description = ?,
+                       profile_status = ?,
+                       updated_at = CURRENT_TIMESTAMP
+                 WHERE profile_id = ?
+                """,
+                payload.orgId().trim(),
+                payload.profileName().trim(),
+                blankToNull(payload.description()),
+                defaultIfBlank(payload.profileStatus(), "draft"),
+                profileId);
+        return ok(Map.of("result", "updated", "profileId", profileId));
+    }
+
+    @DeleteMapping("/parameter-profiles/{profileId}")
+    public ResponseEntity<Map<String, Object>> deleteParameterProfile(@PathVariable String profileId) {
+        if (!exists("SELECT COUNT(*) FROM garuda_registry.terminal_parameter_profile WHERE profile_id = ?", profileId)) {
+            return notFound("parameter profile not found: " + profileId);
+        }
+        if (exists("SELECT COUNT(*) FROM garuda_registry.device_parameter_push WHERE profile_id = ?", profileId)) {
+            return conflict("parameter profile has push history");
+        }
+        jdbc.update("DELETE FROM garuda_registry.terminal_parameter_profile WHERE profile_id = ?", profileId);
+        return ok(Map.of("result", "deleted", "profileId", profileId));
+    }
+
     private int count(String table) {
         Integer value = jdbc.queryForObject("SELECT COUNT(*) FROM " + table, Integer.class);
         return value == null ? 0 : value;
@@ -595,6 +652,11 @@ public class RegistryApi {
         return base.isBlank() ? "drv-" + java.util.UUID.randomUUID().toString().substring(0, 8) : "drv-" + base;
     }
 
+    private static String generateProfileId(String profileName) {
+        String base = slug(profileName);
+        return base.isBlank() ? "profile-" + java.util.UUID.randomUUID().toString().substring(0, 8) : "profile-" + base;
+    }
+
     private static java.sql.Date parseDate(String value) {
         String trimmed = blankToNull(value);
         if (trimmed == null) return null;
@@ -632,6 +694,13 @@ public class RegistryApi {
         if (driverId == null || driverId.isBlank()) throw new IllegalArgumentException("driverId/displayName is required");
         if (payload.orgId() == null || payload.orgId().isBlank()) throw new IllegalArgumentException("orgId is required");
         if (payload.displayName() == null || payload.displayName().isBlank()) throw new IllegalArgumentException("displayName is required");
+    }
+
+    private static void validateParameterProfilePayload(ParameterProfilePayload payload, String profileId) {
+        if (payload == null) throw new IllegalArgumentException("request body is required");
+        if (profileId == null || profileId.isBlank()) throw new IllegalArgumentException("profileId/profileName is required");
+        if (payload.orgId() == null || payload.orgId().isBlank()) throw new IllegalArgumentException("orgId is required");
+        if (payload.profileName() == null || payload.profileName().isBlank()) throw new IllegalArgumentException("profileName is required");
     }
 
     private ResponseEntity<Map<String, Object>> ok(Map<String, Object> body) {
@@ -718,4 +787,11 @@ public class RegistryApi {
             String qualificationExpiresOn,
             String employmentStatus,
             String riskLabel) {}
+
+    public record ParameterProfilePayload(
+            String profileId,
+            String orgId,
+            String profileName,
+            String description,
+            String profileStatus) {}
 }
