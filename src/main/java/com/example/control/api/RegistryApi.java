@@ -248,6 +248,32 @@ public class RegistryApi {
         ));
     }
 
+    @GetMapping("/parameter-profiles/{profileId}/items")
+    public Object parameterItems(@PathVariable String profileId) {
+        if (!exists("SELECT COUNT(*) FROM garuda_registry.terminal_parameter_profile WHERE profile_id = ?", profileId)) {
+            return java.util.List.of();
+        }
+        return jdbc.query("""
+                SELECT
+                    item_id      AS item_id,
+                    profile_id   AS profile_id,
+                    parameter_id AS parameter_id,
+                    value_kind   AS value_kind,
+                    value_text   AS value_text,
+                    created_at   AS created_at
+                FROM garuda_registry.terminal_parameter_item
+                WHERE profile_id = ?
+                ORDER BY parameter_id
+                """, (rs, i) -> row(
+                "itemId", rs.getString("item_id"),
+                "profileId", rs.getString("profile_id"),
+                "parameterId", rs.getInt("parameter_id"),
+                "valueKind", rs.getString("value_kind"),
+                "valueText", rs.getString("value_text"),
+                "createdAt", nullableTimestamp(rs, "created_at")
+        ), profileId);
+    }
+
     @PostMapping("/org-units")
     public ResponseEntity<Map<String, Object>> createOrgUnit(@RequestBody OrgUnitPayload payload) {
         String orgId = blankToNull(payload.orgId()) != null ? payload.orgId() : generateOrgId(payload.orgCode());
@@ -609,6 +635,73 @@ public class RegistryApi {
         return ok(Map.of("result", "deleted", "profileId", profileId));
     }
 
+    @PostMapping("/parameter-profiles/{profileId}/items")
+    public ResponseEntity<Map<String, Object>> createParameterItem(
+            @PathVariable String profileId,
+            @RequestBody ParameterItemPayload payload) {
+        validateParameterItemPayload(payload);
+        if (!exists("SELECT COUNT(*) FROM garuda_registry.terminal_parameter_profile WHERE profile_id = ?", profileId)) {
+            return notFound("parameter profile not found: " + profileId);
+        }
+        String itemId = blankToNull(payload.itemId()) != null ? payload.itemId() : generateParameterItemId(profileId, payload.parameterId());
+        if (exists("SELECT COUNT(*) FROM garuda_registry.terminal_parameter_item WHERE item_id = ?", itemId)) {
+            return conflict("parameter item already exists: " + itemId);
+        }
+        if (exists("SELECT COUNT(*) FROM garuda_registry.terminal_parameter_item WHERE profile_id = ? AND parameter_id = ?", profileId, payload.parameterId())) {
+            return conflict("parameter already exists in this profile");
+        }
+        jdbc.update("""
+                INSERT INTO garuda_registry.terminal_parameter_item
+                    (item_id, profile_id, parameter_id, value_kind, value_text)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                itemId,
+                profileId,
+                payload.parameterId(),
+                payload.valueKind().trim(),
+                payload.valueText().trim());
+        return ok(Map.of("result", "created", "itemId", itemId));
+    }
+
+    @PutMapping("/parameter-profiles/{profileId}/items/{itemId}")
+    public ResponseEntity<Map<String, Object>> updateParameterItem(
+            @PathVariable String profileId,
+            @PathVariable String itemId,
+            @RequestBody ParameterItemPayload payload) {
+        validateParameterItemPayload(payload);
+        if (!exists("SELECT COUNT(*) FROM garuda_registry.terminal_parameter_item WHERE profile_id = ? AND item_id = ?", profileId, itemId)) {
+            return notFound("parameter item not found: " + itemId);
+        }
+        if (exists("SELECT COUNT(*) FROM garuda_registry.terminal_parameter_item WHERE profile_id = ? AND parameter_id = ? AND item_id <> ?",
+                profileId, payload.parameterId(), itemId)) {
+            return conflict("parameter already exists in this profile");
+        }
+        jdbc.update("""
+                UPDATE garuda_registry.terminal_parameter_item
+                   SET parameter_id = ?,
+                       value_kind = ?,
+                       value_text = ?
+                 WHERE profile_id = ? AND item_id = ?
+                """,
+                payload.parameterId(),
+                payload.valueKind().trim(),
+                payload.valueText().trim(),
+                profileId,
+                itemId);
+        return ok(Map.of("result", "updated", "itemId", itemId));
+    }
+
+    @DeleteMapping("/parameter-profiles/{profileId}/items/{itemId}")
+    public ResponseEntity<Map<String, Object>> deleteParameterItem(
+            @PathVariable String profileId,
+            @PathVariable String itemId) {
+        if (!exists("SELECT COUNT(*) FROM garuda_registry.terminal_parameter_item WHERE profile_id = ? AND item_id = ?", profileId, itemId)) {
+            return notFound("parameter item not found: " + itemId);
+        }
+        jdbc.update("DELETE FROM garuda_registry.terminal_parameter_item WHERE profile_id = ? AND item_id = ?", profileId, itemId);
+        return ok(Map.of("result", "deleted", "itemId", itemId));
+    }
+
     private int count(String table) {
         Integer value = jdbc.queryForObject("SELECT COUNT(*) FROM " + table, Integer.class);
         return value == null ? 0 : value;
@@ -616,6 +709,11 @@ public class RegistryApi {
 
     private boolean exists(String sql, Object value) {
         Integer count = jdbc.queryForObject(sql, Integer.class, value);
+        return count != null && count > 0;
+    }
+
+    private boolean exists(String sql, Object... values) {
+        Integer count = jdbc.queryForObject(sql, Integer.class, values);
         return count != null && count > 0;
     }
 
@@ -655,6 +753,12 @@ public class RegistryApi {
     private static String generateProfileId(String profileName) {
         String base = slug(profileName);
         return base.isBlank() ? "profile-" + java.util.UUID.randomUUID().toString().substring(0, 8) : "profile-" + base;
+    }
+
+    private static String generateParameterItemId(String profileId, Integer parameterId) {
+        String profile = slug(profileId);
+        String parameter = parameterId == null ? java.util.UUID.randomUUID().toString().substring(0, 8) : String.format("%08x", parameterId);
+        return "param-" + (profile.isBlank() ? "profile" : profile) + "-" + parameter;
     }
 
     private static java.sql.Date parseDate(String value) {
@@ -701,6 +805,14 @@ public class RegistryApi {
         if (profileId == null || profileId.isBlank()) throw new IllegalArgumentException("profileId/profileName is required");
         if (payload.orgId() == null || payload.orgId().isBlank()) throw new IllegalArgumentException("orgId is required");
         if (payload.profileName() == null || payload.profileName().isBlank()) throw new IllegalArgumentException("profileName is required");
+    }
+
+    private static void validateParameterItemPayload(ParameterItemPayload payload) {
+        if (payload == null) throw new IllegalArgumentException("request body is required");
+        if (payload.parameterId() == null) throw new IllegalArgumentException("parameterId is required");
+        if (payload.parameterId() < 0) throw new IllegalArgumentException("parameterId must be non-negative");
+        if (payload.valueKind() == null || payload.valueKind().isBlank()) throw new IllegalArgumentException("valueKind is required");
+        if (payload.valueText() == null || payload.valueText().isBlank()) throw new IllegalArgumentException("valueText is required");
     }
 
     private ResponseEntity<Map<String, Object>> ok(Map<String, Object> body) {
@@ -794,4 +906,10 @@ public class RegistryApi {
             String profileName,
             String description,
             String profileStatus) {}
+
+    public record ParameterItemPayload(
+            String itemId,
+            Integer parameterId,
+            String valueKind,
+            String valueText) {}
 }

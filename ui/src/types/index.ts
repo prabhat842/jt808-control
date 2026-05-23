@@ -171,3 +171,12 @@ export interface ParameterProfile {
   profileStatus: string
   itemCount: number
 }
+
+export interface ParameterItem {
+  itemId: string
+  profileId: string
+  parameterId: number
+  valueKind: string
+  valueText: string
+  createdAt: string | null
+}

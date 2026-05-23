@@ -1,29 +1,33 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   useCreateDriverProfile,
+  useCreateParameterItem,
   useCreateParameterProfile,
   useCreateVehicleAsset,
   useCreateOrgUnit,
   useCreateRegistryDevice,
   useDeleteDriverProfile,
+  useDeleteParameterItem,
   useDeleteParameterProfile,
   useDeleteVehicleAsset,
   useDeleteOrgUnit,
   useDeleteRegistryDevice,
   useDriverProfiles,
   useOrgUnits,
+  useParameterItems,
   useParameterProfiles,
   useRegistryDevices,
   useRegistrySummary,
   useTerminals,
   useUpdateDriverProfile,
   useUpdateOrgUnit,
+  useUpdateParameterItem,
   useUpdateParameterProfile,
   useUpdateVehicleAsset,
   useUpdateRegistryDevice,
   useVehicleAssets,
 } from '../../api/hooks'
-import type { DriverProfile, OrgUnit, ParameterProfile, RegistryDevice, VehicleAsset } from '../../types'
+import type { DriverProfile, OrgUnit, ParameterItem, ParameterProfile, RegistryDevice, VehicleAsset } from '../../types'
 
 type Section = 'devices' | 'organizations' | 'vehicles' | 'drivers' | 'parameters'
 type EditorKind = 'org' | 'device' | 'vehicle' | 'driver' | 'parameter'
@@ -97,6 +101,13 @@ type ParameterDraft = {
   profileStatus: string
 }
 
+type ParameterItemDraft = {
+  itemId: string | null
+  parameterId: string
+  valueKind: string
+  valueText: string
+}
+
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'devices', label: 'Devices' },
   { id: 'organizations', label: 'Organizations' },
@@ -160,6 +171,13 @@ const EMPTY_PARAMETER: ParameterDraft = {
   profileName: '',
   description: '',
   profileStatus: 'draft',
+}
+
+const EMPTY_PARAMETER_ITEM: ParameterItemDraft = {
+  itemId: null,
+  parameterId: '',
+  valueKind: 'dword',
+  valueText: '',
 }
 
 export default function ManagementPage() {
@@ -713,31 +731,171 @@ function ParametersTable({
   onDelete: (profileId: string) => void
 }) {
   const { data: profiles = [], isLoading } = useParameterProfiles()
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null)
+  const [itemDraft, setItemDraft] = useState<ParameterItemDraft>(EMPTY_PARAMETER_ITEM)
+  const [itemError, setItemError] = useState<string | null>(null)
+  const createItem = useCreateParameterItem()
+  const updateItem = useUpdateParameterItem()
+  const deleteItem = useDeleteParameterItem()
   const rows = filterRows(profiles, search, p => [
     p.profileName, p.orgName, p.profileStatus, p.description,
   ])
+  const selectedProfile = profiles.find(p => p.profileId === selectedProfileId) ?? profiles[0] ?? null
+  const effectiveProfileId = selectedProfile?.profileId ?? null
+  const { data: items = [], isLoading: isLoadingItems } = useParameterItems(effectiveProfileId)
+
+  useEffect(() => {
+    if (!selectedProfileId && profiles.length > 0) {
+      setSelectedProfileId(profiles[0].profileId)
+    } else if (selectedProfileId && profiles.length > 0 && !profiles.some(p => p.profileId === selectedProfileId)) {
+      setSelectedProfileId(profiles[0].profileId)
+    }
+  }, [profiles, selectedProfileId])
+
+  function editItem(item: ParameterItem) {
+    setItemError(null)
+    setItemDraft({
+      itemId: item.itemId,
+      parameterId: formatParameterId(item.parameterId),
+      valueKind: item.valueKind,
+      valueText: item.valueText,
+    })
+  }
+
+  async function saveItem() {
+    if (!effectiveProfileId) return
+    try {
+      setItemError(null)
+      const parameterId = parseParameterId(itemDraft.parameterId)
+      const payload = {
+        parameterId,
+        valueKind: itemDraft.valueKind,
+        valueText: itemDraft.valueText.trim(),
+      }
+      if (!payload.valueText) throw new Error('value is required')
+      if (itemDraft.itemId) {
+        await updateItem.mutateAsync({ profileId: effectiveProfileId, itemId: itemDraft.itemId, payload })
+      } else {
+        await createItem.mutateAsync({ profileId: effectiveProfileId, payload })
+      }
+      setItemDraft(EMPTY_PARAMETER_ITEM)
+    } catch (err) {
+      setItemError(readError(err))
+    }
+  }
+
+  async function removeItem(item: ParameterItem) {
+    if (!effectiveProfileId) return
+    if (!window.confirm('Delete this parameter item?')) return
+    try {
+      setItemError(null)
+      await deleteItem.mutateAsync({ profileId: effectiveProfileId, itemId: item.itemId })
+      if (itemDraft.itemId === item.itemId) setItemDraft(EMPTY_PARAMETER_ITEM)
+    } catch (err) {
+      setItemError(readError(err))
+    }
+  }
 
   return (
-    <RegistryTable
-      loading={isLoading}
-      empty="No parameter profiles"
-      headers={['Profile', 'Organization', 'Items', 'Description', 'Status', 'Actions']}
-      rows={rows.map(p => [
-        <Mono key="profile" strong>{p.profileName}</Mono>,
-        p.orgName,
-        String(p.itemCount),
-        p.description ?? '-',
-        <StatusPill key="status" label={p.profileStatus} tone={p.profileStatus === 'active' ? 'ok' : 'muted'} />,
-        <RowActions
-          key="actions"
-          onEdit={() => onEdit(p)}
-          onDelete={() => onDelete(p.profileId)}
-          canDelete={p.itemCount === 0}
-        />,
-      ])}
-      onCreate={onCreate}
-      createLabel="Add profile"
-    />
+    <div>
+      <RegistryTable
+        loading={isLoading}
+        empty="No parameter profiles"
+        headers={['Profile', 'Organization', 'Items', 'Description', 'Status', 'Actions']}
+        rows={rows.map(p => [
+          <button
+            key="profile"
+            className="font-mono text-[11px]"
+            style={{ color: effectiveProfileId === p.profileId ? 'var(--electric)' : 'var(--muted-strong)', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+            onClick={() => setSelectedProfileId(p.profileId)}
+          >
+            {p.profileName}
+          </button>,
+          p.orgName,
+          String(p.itemCount),
+          p.description ?? '-',
+          <StatusPill key="status" label={p.profileStatus} tone={p.profileStatus === 'active' ? 'ok' : 'muted'} />,
+          <div key="actions" className="flex items-center gap-2">
+            <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '11px' }} onClick={() => setSelectedProfileId(p.profileId)}>
+              Items
+            </button>
+            <RowActions
+              onEdit={() => onEdit(p)}
+              onDelete={() => onDelete(p.profileId)}
+              canDelete={p.itemCount === 0}
+            />
+          </div>,
+        ])}
+        onCreate={onCreate}
+        createLabel="Add profile"
+      />
+
+      {selectedProfile && (
+        <div className="px-4 py-4 space-y-4" style={{ borderTop: '1px solid var(--border)' }}>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="eyebrow text-[9px] mb-1">Parameter Items</div>
+              <div className="font-display text-base font-semibold" style={{ color: 'var(--foreground-strong)' }}>{selectedProfile.profileName}</div>
+            </div>
+            <button className="btn-secondary" onClick={() => setItemDraft(EMPTY_PARAMETER_ITEM)}>
+              New item
+            </button>
+          </div>
+
+          {itemError && (
+            <div className="surface-panel-quiet px-4 py-3 font-mono text-[12px]" style={{ color: 'var(--status-warn)' }}>
+              {itemError}
+            </div>
+          )}
+
+          <div className="grid grid-cols-4 gap-3">
+            <Field label="Parameter ID">
+              <input value={itemDraft.parameterId} onChange={e => setItemDraft({ ...itemDraft, parameterId: e.target.value })} placeholder="0x00000029" />
+            </Field>
+            <Field label="Value kind">
+              <select value={itemDraft.valueKind} onChange={e => setItemDraft({ ...itemDraft, valueKind: e.target.value })}>
+                <option value="byte">byte</option>
+                <option value="word">word</option>
+                <option value="dword">dword</option>
+                <option value="string">string</option>
+                <option value="bytes">bytes</option>
+              </select>
+            </Field>
+            <Field label="Value" className="col-span-2">
+              <input value={itemDraft.valueText} onChange={e => setItemDraft({ ...itemDraft, valueText: e.target.value })} placeholder="30" />
+            </Field>
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            {itemDraft.itemId && (
+              <button className="btn-secondary" onClick={() => setItemDraft(EMPTY_PARAMETER_ITEM)}>
+                Cancel edit
+              </button>
+            )}
+            <button className="btn-primary" onClick={() => void saveItem()} disabled={createItem.isPending || updateItem.isPending}>
+              {itemDraft.itemId ? 'Update item' : 'Add item'}
+            </button>
+          </div>
+
+          <RegistryTable
+            loading={isLoadingItems}
+            empty="No parameter items"
+            headers={['Parameter', 'Kind', 'Value', 'Created', 'Actions']}
+            rows={items.map(item => [
+              <Mono key="param" strong>{formatParameterId(item.parameterId)}</Mono>,
+              item.valueKind,
+              <Mono key="value">{item.valueText}</Mono>,
+              item.createdAt ?? '-',
+              <RowActions
+                key="actions"
+                onEdit={() => editItem(item)}
+                onDelete={() => void removeItem(item)}
+                canDelete
+              />,
+            ])}
+          />
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -1332,6 +1490,18 @@ function filterRows<T>(rows: T[], search: string, pick: (row: T) => (string | nu
 
 function blank(value: string): string | null {
   return value.trim() ? value : null
+}
+
+function parseParameterId(value: string): number {
+  const trimmed = value.trim().toLowerCase()
+  if (!trimmed) throw new Error('parameter ID is required')
+  const parsed = trimmed.startsWith('0x') ? Number.parseInt(trimmed.slice(2), 16) : Number.parseInt(trimmed, 10)
+  if (!Number.isFinite(parsed) || Number.isNaN(parsed) || parsed < 0) throw new Error('parameter ID must be a non-negative number')
+  return parsed
+}
+
+function formatParameterId(value: number): string {
+  return `0x${value.toString(16).padStart(8, '0').toUpperCase()}`
 }
 
 function readError(err: unknown): string {

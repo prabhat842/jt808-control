@@ -15,6 +15,7 @@ import type {
   VehicleAsset,
   DriverProfile,
   ParameterProfile,
+  ParameterItem,
 } from '../types'
 
 // ── Services ──────────────────────────────────────────────────────────────
@@ -399,6 +400,57 @@ export function useDeleteParameterProfile() {
         qc.invalidateQueries({ queryKey: ['registry-parameter-profiles'] }),
         qc.invalidateQueries({ queryKey: ['registry-summary'] }),
         qc.invalidateQueries({ queryKey: ['registry-org-units'] }),
+      ])
+    },
+  })
+}
+
+export function useParameterItems(profileId: string | null) {
+  return useQuery<ParameterItem[]>({
+    queryKey: ['registry-parameter-items', profileId],
+    queryFn: () => client.get(`/registry/parameter-profiles/${encodeURIComponent(profileId ?? '')}/items`).then(r => r.data),
+    enabled: !!profileId,
+  })
+}
+
+export function useCreateParameterItem() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ profileId, payload }: { profileId: string; payload: Partial<ParameterItem> & { parameterId: number; valueKind: string; valueText: string } }) =>
+      client.post(`/registry/parameter-profiles/${encodeURIComponent(profileId)}/items`, payload).then(r => r.data),
+    onSuccess: async (_data, variables) => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['registry-parameter-items', variables.profileId] }),
+        qc.invalidateQueries({ queryKey: ['registry-parameter-profiles'] }),
+        qc.invalidateQueries({ queryKey: ['registry-summary'] }),
+      ])
+    },
+  })
+}
+
+export function useUpdateParameterItem() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ profileId, itemId, payload }: { profileId: string; itemId: string; payload: Partial<ParameterItem> & { parameterId: number; valueKind: string; valueText: string } }) =>
+      client.put(`/registry/parameter-profiles/${encodeURIComponent(profileId)}/items/${encodeURIComponent(itemId)}`, payload).then(r => r.data),
+    onSuccess: async (_data, variables) => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['registry-parameter-items', variables.profileId] }),
+        qc.invalidateQueries({ queryKey: ['registry-parameter-profiles'] }),
+      ])
+    },
+  })
+}
+
+export function useDeleteParameterItem() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ profileId, itemId }: { profileId: string; itemId: string }) =>
+      client.delete(`/registry/parameter-profiles/${encodeURIComponent(profileId)}/items/${encodeURIComponent(itemId)}`).then(r => r.data),
+    onSuccess: async (_data, variables) => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['registry-parameter-items', variables.profileId] }),
+        qc.invalidateQueries({ queryKey: ['registry-parameter-profiles'] }),
       ])
     },
   })

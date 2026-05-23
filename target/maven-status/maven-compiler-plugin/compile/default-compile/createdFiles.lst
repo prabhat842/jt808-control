@@ -4,6 +4,7 @@ com/example/control/api/ControlApi.class
 com/example/control/api/RegistryApi$ParameterProfilePayload.class
 com/example/control/service/ProcessOrchestrator$ServiceConfig.class
 com/example/control/api/UiProperties.class
+com/example/control/api/RegistryApi$ParameterItemPayload.class
 com/example/control/service/ManagedProcess.class
 com/example/control/api/RegistryApi.class
 com/example/control/api/RegistryApi$DevicePayload.class

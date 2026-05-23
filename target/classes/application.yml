@@ -7,7 +7,7 @@ server-url: http://localhost:8888
 # Values forwarded to the React UI via GET /api/config
 ui:
   rtvs-browser-url: http://localhost:8089   # URL the *browser* uses to open RTVS
-  mapbox-token: ${MAPBOX_TOKEN:} # Supply MAPBOX_TOKEN at runtime; keep secrets out of git
+  mapbox-token: ${MAPBOX_TOKEN:${VITE_MAPBOX_TOKEN:}} # Supply token via env or local .env file; keep secrets out of git
   map-center-lat: 22.8046                   # Default map centre latitude  (Jamshedpur)
   map-center-lon: 86.2029                   # Default map centre longitude (Jamshedpur)
   map-zoom: 11
