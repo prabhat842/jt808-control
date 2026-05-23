@@ -15,6 +15,22 @@ logging:
     com.example.control: INFO
 
 services:
+  # ── Database ─────────────────────────────────────────────────────────────
+  # Starts first so data is available when the server starts.
+  # Stops last so all pending writes from jt808-server land before shutdown.
+  # shutdownTimeoutSec=30: gives ClickHouse time to flush MergeTree buffers.
+  - id: clickhouse
+    name: ClickHouse
+    description: "Time-series DB · vehicle_gps · vehicle_alarm · vehicle_alarm_file"
+    group: database
+    command:
+      - /home/prabhat/bin/clickhouse
+      - server
+      - --config=/home/prabhat/clickhouse-data/preprocessed_configs/clickhouse-config.xml
+    workDir: /home/prabhat/clickhouse-data
+    shutdownTimeoutSec: 30
+    displayOrder: 0
+
   # ── Vehicle terminal ─────────────────────────────────────────────────────
   # Starts independently. DMS/ADAS/BSD run immediately on startup.
   # Connects to server automatically whenever it becomes available.

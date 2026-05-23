@@ -2,10 +2,16 @@ import { useState, useEffect, useRef } from 'react'
 import { useServices, useStartService, useStopService, useStartAll, useStopAll } from '../../api/hooks'
 import type { ServiceStatus } from '../../types'
 
-const GROUP_ORDER = ['vehicle', 'infrastructure']
+const GROUP_ORDER  = ['database', 'vehicle', 'infrastructure']
 const GROUP_LABELS: Record<string, string> = {
-  vehicle: 'Vehicle Terminal',
+  database:       'Database',
+  vehicle:        'Vehicle Terminal',
   infrastructure: 'Infrastructure',
+}
+const GROUP_NOTE: Record<string, string> = {
+  database:       'Starts first · stops last — ensures all writes are flushed before shutdown',
+  vehicle:        'Stops first on shutdown — sends JT808 logout before server closes',
+  infrastructure: 'Stops after vehicle · @PreDestroy flushes write queue before DB shuts down',
 }
 
 export default function ServicesPage() {
@@ -14,15 +20,16 @@ export default function ServicesPage() {
   const stopService  = useStopService()
   const startAll     = useStartAll()
   const stopAll      = useStopAll()
-
   const [logTarget, setLogTarget] = useState<string | null>(null)
 
-  const grouped = GROUP_ORDER.map(group => ({
-    group,
-    items: services
-      .filter(s => s.group === group)
-      .sort((a, b) => a.displayOrder - b.displayOrder),
-  })).filter(g => g.items.length > 0)
+  const grouped = GROUP_ORDER
+    .map(group => ({
+      group,
+      items: services
+        .filter(s => s.group === group)
+        .sort((a, b) => a.displayOrder - b.displayOrder),
+    }))
+    .filter(g => g.items.length > 0)
 
   const runningCount = services.filter(s => s.running).length
 
@@ -35,33 +42,33 @@ export default function ServicesPage() {
             Services
           </h1>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <span className="font-mono text-[11px]" style={{ color: 'var(--muted)' }}>
             {runningCount}/{services.length} running
           </span>
-          <button className="btn-primary" onClick={() => startAll.mutate()} disabled={startAll.isPending}>
-            ▶ Start all
-          </button>
-          <button className="btn-secondary" onClick={() => stopAll.mutate()} disabled={stopAll.isPending}>
-            ■ Stop all
-          </button>
+          <button className="btn-primary"    onClick={() => startAll.mutate()} disabled={startAll.isPending}>▶ Start all</button>
+          <button className="btn-secondary"  onClick={() => stopAll.mutate()}  disabled={stopAll.isPending} >■ Stop all</button>
         </div>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-5">
         {grouped.map(({ group, items }) => (
           <div key={group}>
-            <div className="eyebrow text-[9px] mb-2">{GROUP_LABELS[group] ?? group}</div>
+            <div className="flex items-baseline gap-3 mb-2">
+              <div className="eyebrow text-[9px]">{GROUP_LABELS[group] ?? group}</div>
+              {GROUP_NOTE[group] && (
+                <span className="font-mono text-[9px]" style={{ color: 'var(--muted)' }}>
+                  {GROUP_NOTE[group]}
+                </span>
+              )}
+            </div>
             <div className="surface-panel overflow-hidden">
               {items.map((svc, i) => (
-                <div
-                  key={svc.id}
-                  style={{ borderBottom: i < items.length - 1 ? '1px solid var(--border)' : 'none' }}
-                >
+                <div key={svc.id} style={{ borderBottom: i < items.length - 1 ? '1px solid var(--border)' : 'none' }}>
                   <ServiceRow
                     svc={svc}
                     onStart={() => startService.mutate(svc.id)}
-                    onStop={() => stopService.mutate(svc.id)}
+                    onStop={()  => stopService.mutate(svc.id)}
                     onLogs={() => setLogTarget(logTarget === svc.id ? null : svc.id)}
                     showLogs={logTarget === svc.id}
                   />
@@ -79,24 +86,20 @@ export default function ServicesPage() {
 function ServiceRow({ svc, onStart, onStop, onLogs, showLogs }: {
   svc: ServiceStatus
   onStart: () => void
-  onStop: () => void
-  onLogs: () => void
+  onStop:  () => void
+  onLogs:  () => void
   showLogs: boolean
 }) {
+  const dotColor = svc.running ? 'var(--status-ok)' : 'var(--muted)'
+
   return (
     <div className="flex items-center gap-4 px-5 py-3">
-      <div className="flex items-center gap-2 flex-shrink-0">
-        <span className="status-dot">
-          <span
-            className="status-dot-inner"
-            style={{
-              background: svc.running ? 'var(--status-ok)' : 'var(--muted)',
-              color: svc.running ? 'var(--status-ok)' : 'var(--muted)',
-            }}
-          />
-        </span>
-      </div>
+      {/* Status dot */}
+      <span className="status-dot flex-shrink-0">
+        <span className="status-dot-inner" style={{ background: dotColor, color: dotColor }} />
+      </span>
 
+      {/* Name + description */}
       <div className="flex-1 min-w-0">
         <div className="font-display text-sm font-medium" style={{ color: 'var(--foreground-strong)' }}>
           {svc.name}
@@ -106,8 +109,9 @@ function ServiceRow({ svc, onStart, onStop, onLogs, showLogs }: {
         </div>
       </div>
 
-      <div className="font-mono text-[10px] flex-shrink-0 text-right" style={{ color: 'var(--muted)' }}>
-        {svc.running && svc.pid != null && <div>PID {svc.pid}</div>}
+      {/* Runtime info */}
+      <div className="font-mono text-[10px] flex-shrink-0 text-right w-28" style={{ color: 'var(--muted)' }}>
+        {svc.running && svc.pid != null && svc.pid > 0 && <div>PID {svc.pid}</div>}
         {svc.running && svc.startedAt && (
           <div>{new Date(svc.startedAt).toLocaleTimeString()}</div>
         )}
@@ -116,21 +120,23 @@ function ServiceRow({ svc, onStart, onStop, onLogs, showLogs }: {
             exit {svc.exitCode}
           </div>
         )}
+        {!svc.running && svc.exitCode == null && (
+          <div style={{ color: 'var(--muted)' }}>stopped</div>
+        )}
       </div>
 
+      {/* Actions */}
       <div className="flex items-center gap-2 flex-shrink-0">
-        {svc.running ? (
-          <button className="btn-secondary" style={{ padding: '4px 12px', fontSize: '11px' }} onClick={onStop}>
-            ■ Stop
-          </button>
-        ) : (
-          <button className="btn-primary" style={{ padding: '4px 12px', fontSize: '11px' }} onClick={onStart}>
-            ▶ Start
-          </button>
-        )}
+        {svc.running
+          ? <button className="btn-secondary" style={{ padding: '4px 12px', fontSize: '11px' }} onClick={onStop}>■ Stop</button>
+          : <button className="btn-primary"   style={{ padding: '4px 12px', fontSize: '11px' }} onClick={onStart}>▶ Start</button>
+        }
         <button
           className="btn-secondary"
-          style={{ padding: '4px 10px', fontSize: '11px', borderColor: showLogs ? 'var(--electric-border)' : undefined, color: showLogs ? 'var(--electric)' : undefined }}
+          style={{
+            padding: '4px 10px', fontSize: '11px',
+            ...(showLogs ? { borderColor: 'var(--electric-border)', color: 'var(--electric)' } : {}),
+          }}
           onClick={onLogs}
         >
           ≡ Logs
@@ -148,18 +154,13 @@ function LogPanel({ serviceId }: { serviceId: string }) {
     setLines([])
     const es = new EventSource(`/api/logs/${serviceId}`)
     es.onmessage = e => {
-      setLines(prev => {
-        const next = [...prev, e.data].slice(-300)
-        return next
-      })
+      setLines(prev => [...prev, e.data].slice(-300))
     }
     return () => es.close()
   }, [serviceId])
 
   useEffect(() => {
-    if (logRef.current) {
-      logRef.current.scrollTop = logRef.current.scrollHeight
-    }
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
   }, [lines])
 
   return (
@@ -169,7 +170,7 @@ function LogPanel({ serviceId }: { serviceId: string }) {
       style={{
         background: 'rgba(5,10,16,0.96)',
         borderTop: '1px solid var(--border)',
-        height: '200px',
+        height: '220px',
         color: 'var(--muted-strong)',
         whiteSpace: 'pre-wrap',
         wordBreak: 'break-all',
@@ -177,8 +178,21 @@ function LogPanel({ serviceId }: { serviceId: string }) {
     >
       {lines.length === 0
         ? <span style={{ color: 'var(--muted)' }}>Waiting for log output…</span>
-        : lines.map((l, i) => <div key={i}>{l}</div>)
+        : lines.map((l, i) => (
+          <div key={i} style={{ color: colorForLine(l) }}>{l}</div>
+        ))
       }
     </div>
   )
+}
+
+function colorForLine(line: string): string {
+  const l = line.toLowerCase()
+  if (l.includes('error') || l.includes('exception') || l.includes('fatal'))
+    return 'var(--status-warn)'
+  if (l.includes('warn'))
+    return '#fb923c99'
+  if (l.includes('--- start') || l.includes('--- stop') || l.includes('--- evict'))
+    return 'var(--electric)'
+  return 'var(--muted-strong)'
 }
