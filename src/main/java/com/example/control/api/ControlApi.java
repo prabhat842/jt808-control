@@ -26,6 +26,9 @@ public class ControlApi {
     @Value("${rtvs-url:http://localhost:8089}")
     private String rtvsUrl;
 
+    @Value("${server-url:http://localhost:8888}")
+    private String serverUrl;
+
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(3)).build();
 
@@ -78,17 +81,36 @@ public class ControlApi {
         return orchestrator.streamLogs(id);
     }
 
-    // ── Media proxy (async, non-blocking — RTVS unavailability never ties up Tomcat threads) ──
+    // ── Server proxy (jt808-server: terminals, alarms, GPS, clips) ──────────
 
     @GetMapping(value = "/terminals", produces = MediaType.APPLICATION_JSON_VALUE)
     public CompletableFuture<ResponseEntity<String>> terminals() {
-        return proxyAsync(rtvsUrl + "/api/terminals");
+        return proxyAsync(serverUrl + "/api/terminals");
     }
 
     @GetMapping(value = "/sessions", produces = MediaType.APPLICATION_JSON_VALUE)
     public CompletableFuture<ResponseEntity<String>> sessions() {
-        return proxyAsync(rtvsUrl + "/api/sessions");
+        return proxyAsync(serverUrl + "/api/media/sessions");
     }
+
+    @GetMapping(value = "/gps/latest", produces = MediaType.APPLICATION_JSON_VALUE)
+    public CompletableFuture<ResponseEntity<String>> gpsLatest() {
+        return proxyAsync(serverUrl + "/api/gps/latest");
+    }
+
+    @GetMapping(value = "/alarms", produces = MediaType.APPLICATION_JSON_VALUE)
+    public CompletableFuture<ResponseEntity<String>> alarms(HttpServletRequest req) {
+        String qs = req.getQueryString();
+        return proxyAsync(serverUrl + "/api/alarms" + (qs != null ? "?" + qs : ""));
+    }
+
+    @GetMapping(value = "/alarm-files", produces = MediaType.APPLICATION_JSON_VALUE)
+    public CompletableFuture<ResponseEntity<String>> alarmFiles(HttpServletRequest req) {
+        String qs = req.getQueryString();
+        return proxyAsync(serverUrl + "/api/alarm-files" + (qs != null ? "?" + qs : ""));
+    }
+
+    // ── RTVS proxy (live stream start/stop) ──────────────────────────────
 
     @GetMapping(value = "/live/start", produces = MediaType.APPLICATION_JSON_VALUE)
     public CompletableFuture<ResponseEntity<String>> liveStart(HttpServletRequest req) {
@@ -100,6 +122,33 @@ public class ControlApi {
     public CompletableFuture<ResponseEntity<String>> liveStop(HttpServletRequest req) {
         String qs = req.getQueryString();
         return proxyAsync(rtvsUrl + "/api/live/stop" + (qs != null ? "?" + qs : ""));
+    }
+
+    @GetMapping(value = "/clips", produces = MediaType.APPLICATION_JSON_VALUE)
+    public CompletableFuture<ResponseEntity<String>> clips() {
+        return proxyAsync(serverUrl + "/api/clips");
+    }
+
+    @GetMapping(value = "/clips/events", produces = "text/event-stream")
+    public void clipEvents(jakarta.servlet.http.HttpServletResponse response) throws Exception {
+        response.setContentType("text/event-stream");
+        response.setCharacterEncoding("UTF-8");
+        response.setHeader("Cache-Control", "no-cache");
+        response.setHeader("Connection", "keep-alive");
+        response.setHeader("X-Accel-Buffering", "no");
+        // Simple blocking proxy — SSE from jt808-server piped to the browser
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(serverUrl + "/api/clips/events"))
+                .timeout(Duration.ofSeconds(30))
+                .GET().build();
+        try {
+            http.send(req, HttpResponse.BodyHandlers.ofLines()).body().forEach(line -> {
+                try {
+                    response.getWriter().write(line + "\n");
+                    response.getWriter().flush();
+                } catch (Exception ignored) { }
+            });
+        } catch (Exception ignored) { }
     }
 
     /**
