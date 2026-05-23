@@ -1,24 +1,24 @@
 import { useRef, useEffect, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
 import { useTerminals, useMediaSessions, useLatestPositions } from '../../api/hooks'
+import { useConfig } from '../../api/config'
 import type { Terminal, MediaSession } from '../../types'
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN
 
-// Jamshedpur, Jharkhand, India
-const HOME: [number, number] = [86.2029, 22.8046]
-
-// Fallback when ClickHouse has no position yet for this terminal
-function demoCoord(terminalId: string): [number, number] {
+function demoCoord(terminalId: string, home: [number, number]): [number, number] {
   let h = 0
   for (const c of terminalId) h = (h * 31 + c.charCodeAt(0)) >>> 0
   return [
-    HOME[0] + ((h % 1000) - 500) / 3000,
-    HOME[1] + (((h >> 8) % 1000) - 500) / 3000,
+    home[0] + ((h % 1000) - 500) / 3000,
+    home[1] + (((h >> 8) % 1000) - 500) / 3000,
   ]
 }
 
 export default function FleetPage() {
+  const config = useConfig()
+  const home: [number, number] = [config.mapCenterLon, config.mapCenterLat]
+
   const mapContainer = useRef<HTMLDivElement>(null)
   const mapRef       = useRef<mapboxgl.Map | null>(null)
   const markersRef   = useRef<Map<string, mapboxgl.Marker>>(new Map())
@@ -28,7 +28,6 @@ export default function FleetPage() {
   const { data: mediaSessions = [] } = useMediaSessions()
   const { data: positions = [] }     = useLatestPositions()
 
-  // Build sim → position lookup for real GPS coords
   const posMap = new Map(positions.map(p => [p.sim, p]))
 
   useEffect(() => {
@@ -36,8 +35,8 @@ export default function FleetPage() {
     mapRef.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: 'mapbox://styles/mapbox/dark-v11',
-      center: HOME,
-      zoom: 11,
+      center: home,
+      zoom: config.mapZoom,
     })
     mapRef.current.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'bottom-right')
     return () => { mapRef.current?.remove(); mapRef.current = null }
@@ -56,7 +55,7 @@ export default function FleetPage() {
       const gps   = posMap.get(t.terminalId)
       const coord: [number, number] = gps
         ? [gps.lon, gps.lat]
-        : demoCoord(t.terminalId)
+        : demoCoord(t.terminalId, home)
       if (markersRef.current.has(t.terminalId)) {
         markersRef.current.get(t.terminalId)!.setLngLat(coord)
         continue
@@ -84,7 +83,7 @@ export default function FleetPage() {
       el.addEventListener('click', () => setSelected(t))
       markersRef.current.set(t.terminalId, marker)
     }
-  }, [terminals, posMap])
+  }, [terminals, posMap, home])
 
   const activeStreams = mediaSessions.filter(s => s.active).length
 

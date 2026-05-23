@@ -22,6 +22,7 @@ import java.util.concurrent.CompletableFuture;
 public class ControlApi {
 
     private final ProcessOrchestrator orchestrator;
+    private final UiProperties        uiProperties;
 
     @Value("${rtvs-url:http://localhost:8089}")
     private String rtvsUrl;
@@ -32,8 +33,23 @@ public class ControlApi {
     private final HttpClient http = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(3)).build();
 
-    public ControlApi(ProcessOrchestrator orchestrator) {
-        this.orchestrator = orchestrator;
+    public ControlApi(ProcessOrchestrator orchestrator, UiProperties uiProperties) {
+        this.orchestrator  = orchestrator;
+        this.uiProperties  = uiProperties;
+    }
+
+    /**
+     * Runtime configuration forwarded to the React UI.
+     * The UI fetches this once on startup so no addresses are hardcoded in the bundle.
+     */
+    @GetMapping(value = "/config", produces = MediaType.APPLICATION_JSON_VALUE)
+    public String config() {
+        return "{"
+            + "\"rtvsUrl\":\""     + uiProperties.getRtvsBrowserUrl() + "\","
+            + "\"mapCenterLat\":"  + uiProperties.getMapCenterLat()   + ","
+            + "\"mapCenterLon\":"  + uiProperties.getMapCenterLon()   + ","
+            + "\"mapZoom\":"       + uiProperties.getMapZoom()
+            + "}";
     }
 
     @GetMapping("/status")

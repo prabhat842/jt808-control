@@ -27,11 +27,13 @@ const dmsAlarm    = document.getElementById('dms-alarm');
 const fmt = n => n >= 1e6 ? (n/1e6).toFixed(1)+' MB' : n >= 1e3 ? (n/1e3).toFixed(1)+' KB' : n+' B';
 const indicator = (ok, t, f) => `<span class="${ok?'ok':'warn'}">${ok?t:f}</span>`;
 const sessionKey = s => s.terminalId + '#' + s.channelId;
-const shortId = id => id.replace(/^0+/, '') || '0';
-const stoppedSessions = new Set();
+// BCD[6] phone number is always 12 digits per JT808-2013 §4.4.3; show last 6 for display brevity
+const shortId = id => id ? id.slice(-6) : '—';
+const stoppedSessions = new Set(JSON.parse(sessionStorage.getItem('stoppedSessions') || '[]'));
 const stopKey = (terminalId, channelId) => terminalId + '#' + channelId;
-const markStopped = key => stoppedSessions.add(key);
-const clearStopped = key => stoppedSessions.delete(key);
+const _persistStopped = () => sessionStorage.setItem('stoppedSessions', JSON.stringify([...stoppedSessions]));
+const markStopped  = key => { stoppedSessions.add(key);    _persistStopped(); };
+const clearStopped = key => { stoppedSessions.delete(key); _persistStopped(); };
 const isStopped = key => stoppedSessions.has(key);
 
 // ── VideoTile ─────────────────────────────────────────────────────────────
@@ -328,8 +330,9 @@ document.getElementById('btn-fullscreen').addEventListener('click', () => {
 // ── Vehicle + session polling ─────────────────────────────────────────────
 const prevBytes = {};
 
+// Both JT808 server and RTVS decode BCD[6] to exactly 12 digits — JT808-2013 §4.4.3 Table 2
 function matchIds(serverId, rtvsId) {
-  return serverId.endsWith(rtvsId) || rtvsId.endsWith(serverId);
+  return serverId === rtvsId;
 }
 
 function renderVehicles(terminals, sessions) {
@@ -381,9 +384,13 @@ function renderVehicles(terminals, sessions) {
           <button class="sc-btn sc-btn--assign" title="${isAssigned ? 'Reassign' : 'Add to panel'}">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M5 3l6 5-6 5"/></svg>
           </button>
-          <button class="sc-btn sc-btn--stop" title="Stop stream">
-            <svg viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
-          </button>
+          ${paused
+            ? `<button class="sc-btn sc-btn--restart" title="Start stream">
+                 <svg viewBox="0 0 16 16" fill="currentColor"><polygon points="3,2 13,8 3,14"/></svg>
+               </button>`
+            : `<button class="sc-btn sc-btn--stop" title="Stop stream">
+                 <svg viewBox="0 0 16 16" fill="currentColor"><rect x="3" y="3" width="10" height="10" rx="1"/></svg>
+               </button>`}
         </div>
       </div>`;
     }).join('');
@@ -420,11 +427,17 @@ function renderVehicles(terminals, sessions) {
   vehicleList.querySelectorAll('.ch-row').forEach(row => {
     const tid = row.dataset.tid, ch = parseInt(row.dataset.ch);
     row.querySelector('.sc-btn--assign').addEventListener('click', e => { e.stopPropagation(); tileManager.assignSession(tid, ch); });
-    row.querySelector('.sc-btn--stop').addEventListener('click', e => {
+    row.querySelector('.sc-btn--stop')?.addEventListener('click', e => {
       e.stopPropagation();
       markStopped(stopKey(tid, ch));
       fetch(`/api/live/stop?terminal=${tid}&channel=${ch}`).catch(() => {});
       tileManager.tiles.filter(t => t.key() === tid + '#' + ch).forEach(t => t.close());
+    });
+    row.querySelector('.sc-btn--restart')?.addEventListener('click', e => {
+      e.stopPropagation();
+      clearStopped(stopKey(tid, ch));
+      fetch(`/api/live/start?terminal=${tid}&channel=${ch}`).catch(() => {});
+      setTimeout(() => tileManager.assignSession(tid, ch), 800);
     });
     row.addEventListener('click', () => tileManager.assignSession(tid, ch));
   });
@@ -451,7 +464,7 @@ async function pollVehicles() {
     if (!termRes.ok || !sessRes.ok) throw new Error();
     const [terminals, sessions] = await Promise.all([termRes.json(), sessRes.json()]);
     const sessionKeys = new Set(sessions.map(sessionKey));
-    stoppedSessions.forEach(key => { if (!sessionKeys.has(key)) stoppedSessions.delete(key); });
+    stoppedSessions.forEach(key => { if (!sessionKeys.has(key)) clearStopped(key); });
     healthEl.textContent = 'online'; healthEl.className = 'badge badge--on';
     renderVehicles(terminals, sessions);
     tileManager.tiles.forEach(t => {

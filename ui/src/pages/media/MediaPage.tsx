@@ -1,7 +1,6 @@
 import { useTerminals, useMediaSessions, useStartLive, useStopLive } from '../../api/hooks'
+import { useConfig } from '../../api/config'
 import { useState } from 'react'
-
-const RTVS_URL = 'http://localhost:8089'
 
 const STREAM_TYPES = [
   { value: 0, label: 'Video' },
@@ -10,6 +9,7 @@ const STREAM_TYPES = [
 ]
 
 export default function MediaPage() {
+  const config = useConfig()
   const { data: terminals = [] } = useTerminals()
   const { data: sessions  = [] } = useMediaSessions()
   const startLive = useStartLive()
@@ -121,12 +121,12 @@ export default function MediaPage() {
               ● live
             </span>
           </div>
-          <a href={RTVS_URL} target="_blank" rel="noopener noreferrer"
+          <a href={config.rtvsUrl} target="_blank" rel="noopener noreferrer"
             className="font-mono text-[10px]" style={{ color: 'var(--muted)', textDecoration: 'none' }}>
             ↗ open full
           </a>
         </div>
-        <iframe src={RTVS_URL} className="flex-1 w-full border-0"
+        <iframe src={config.rtvsUrl} className="flex-1 w-full border-0"
           title="RTVS Studio" allow="camera; microphone; autoplay" />
       </div>
     </div>
