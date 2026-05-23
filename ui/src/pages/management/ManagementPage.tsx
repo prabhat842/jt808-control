@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
+  useCreateDriverProfile,
+  useCreateVehicleAsset,
   useCreateOrgUnit,
   useCreateRegistryDevice,
+  useDeleteDriverProfile,
+  useDeleteVehicleAsset,
   useDeleteOrgUnit,
   useDeleteRegistryDevice,
   useDriverProfiles,
@@ -10,20 +14,26 @@ import {
   useRegistryDevices,
   useRegistrySummary,
   useTerminals,
+  useUpdateDriverProfile,
   useUpdateOrgUnit,
+  useUpdateVehicleAsset,
   useUpdateRegistryDevice,
   useVehicleAssets,
 } from '../../api/hooks'
-import type { OrgUnit, RegistryDevice } from '../../types'
+import type { DriverProfile, OrgUnit, RegistryDevice, VehicleAsset } from '../../types'
 
 type Section = 'devices' | 'organizations' | 'vehicles' | 'drivers' | 'parameters'
-type EditorKind = 'org' | 'device'
+type EditorKind = 'org' | 'device' | 'vehicle' | 'driver'
 
 type EditorState =
   | { kind: 'org'; mode: 'create'; org?: OrgUnit }
   | { kind: 'org'; mode: 'edit'; org: OrgUnit }
   | { kind: 'device'; mode: 'create'; device?: RegistryDevice }
   | { kind: 'device'; mode: 'edit'; device: RegistryDevice }
+  | { kind: 'vehicle'; mode: 'create'; vehicle?: VehicleAsset }
+  | { kind: 'vehicle'; mode: 'edit'; vehicle: VehicleAsset }
+  | { kind: 'driver'; mode: 'create'; driver?: DriverProfile }
+  | { kind: 'driver'; mode: 'edit'; driver: DriverProfile }
 
 type OrgDraft = {
   parentOrgId: string
@@ -50,6 +60,31 @@ type DeviceDraft = {
   lifecycleStatus: string
 }
 
+type VehicleDraft = {
+  orgId: string
+  deviceId: string
+  plateNumber: string
+  plateColor: string
+  vin: string
+  vehicleKind: string
+  fuelKind: string
+  capacityTons: string
+  operationStatus: string
+}
+
+type DriverDraft = {
+  orgId: string
+  displayName: string
+  phone: string
+  licenseNumber: string
+  licenseClass: string
+  licenseExpiresOn: string
+  qualificationNumber: string
+  qualificationExpiresOn: string
+  employmentStatus: string
+  riskLabel: string
+}
+
 const SECTIONS: { id: Section; label: string }[] = [
   { id: 'devices', label: 'Devices' },
   { id: 'organizations', label: 'Organizations' },
@@ -69,21 +104,67 @@ const EMPTY_ORG: OrgDraft = {
   notes: '',
 }
 
+const EMPTY_DEVICE: DeviceDraft = {
+  orgId: '',
+  terminalId: '',
+  sim: '',
+  protocolFamily: 'JT808',
+  protocolVersion: 'JT/T 808-2013',
+  deviceModel: '',
+  manufacturerId: '',
+  firmwareVersion: '',
+  hardwareVersion: '',
+  installStatus: 'inventory',
+  lifecycleStatus: 'active',
+}
+
+const EMPTY_VEHICLE: VehicleDraft = {
+  orgId: '',
+  deviceId: '',
+  plateNumber: '',
+  plateColor: 'blue',
+  vin: '',
+  vehicleKind: 'commercial',
+  fuelKind: '',
+  capacityTons: '',
+  operationStatus: 'active',
+}
+
+const EMPTY_DRIVER: DriverDraft = {
+  orgId: '',
+  displayName: '',
+  phone: '',
+  licenseNumber: '',
+  licenseClass: '',
+  licenseExpiresOn: '',
+  qualificationNumber: '',
+  qualificationExpiresOn: '',
+  employmentStatus: 'active',
+  riskLabel: 'normal',
+}
+
 export default function ManagementPage() {
   const [section, setSection] = useState<Section>('devices')
   const [search, setSearch] = useState('')
   const [editor, setEditor] = useState<EditorState | null>(null)
-  const [draft, setDraft] = useState<OrgDraft | DeviceDraft>(EMPTY_ORG)
+  const [draft, setDraft] = useState<OrgDraft | DeviceDraft | VehicleDraft | DriverDraft>(EMPTY_ORG)
   const [error, setError] = useState<string | null>(null)
 
   const { data: summary } = useRegistrySummary()
   const { data: orgs = [] } = useOrgUnits()
+  const { data: devices = [] } = useRegistryDevices()
   const createOrg = useCreateOrgUnit()
   const updateOrg = useUpdateOrgUnit()
   const deleteOrg = useDeleteOrgUnit()
   const createDevice = useCreateRegistryDevice()
   const updateDevice = useUpdateRegistryDevice()
   const deleteDevice = useDeleteRegistryDevice()
+  const createVehicle = useCreateVehicleAsset()
+  const updateVehicle = useUpdateVehicleAsset()
+  const deleteVehicle = useDeleteVehicleAsset()
+  const createDriver = useCreateDriverProfile()
+  const updateDriver = useUpdateDriverProfile()
+  const deleteDriver = useDeleteDriverProfile()
 
   useEffect(() => {
     if (!editor) {
@@ -103,21 +184,48 @@ export default function ManagementPage() {
         contactPhone: org?.contactPhone ?? '',
         notes: '',
       })
-    } else {
+    } else if (editor.kind === 'device') {
       const device = editor.mode === 'edit' ? editor.device : editor.device
-      setDraft({
-        orgId: device?.orgId ?? '',
-        terminalId: device?.terminalId ?? '',
-        sim: device?.sim ?? '',
-        protocolFamily: device?.protocolFamily ?? 'JT808',
-        protocolVersion: device?.protocolVersion ?? 'JT/T 808-2013',
-        deviceModel: device?.deviceModel ?? '',
-        manufacturerId: device?.manufacturerId ?? '',
-        firmwareVersion: device?.firmwareVersion ?? '',
-        hardwareVersion: device?.hardwareVersion ?? '',
-        installStatus: device?.installStatus ?? 'inventory',
-        lifecycleStatus: device?.lifecycleStatus ?? 'active',
-      })
+      setDraft(device ? {
+        orgId: device.orgId ?? '',
+        terminalId: device.terminalId ?? '',
+        sim: device.sim ?? '',
+        protocolFamily: device.protocolFamily ?? 'JT808',
+        protocolVersion: device.protocolVersion ?? 'JT/T 808-2013',
+        deviceModel: device.deviceModel ?? '',
+        manufacturerId: device.manufacturerId ?? '',
+        firmwareVersion: device.firmwareVersion ?? '',
+        hardwareVersion: device.hardwareVersion ?? '',
+        installStatus: device.installStatus ?? 'inventory',
+        lifecycleStatus: device.lifecycleStatus ?? 'active',
+      } : EMPTY_DEVICE)
+    } else if (editor.kind === 'vehicle') {
+      const vehicle = editor.mode === 'edit' ? editor.vehicle : editor.vehicle
+      setDraft(vehicle ? {
+        orgId: vehicle.orgId ?? '',
+        deviceId: vehicle.deviceId ?? '',
+        plateNumber: vehicle.plateNumber ?? '',
+        plateColor: vehicle.plateColor ?? 'blue',
+        vin: vehicle.vin ?? '',
+        vehicleKind: vehicle.vehicleKind ?? 'commercial',
+        fuelKind: vehicle.fuelKind ?? '',
+        capacityTons: vehicle.capacityTons == null ? '' : String(vehicle.capacityTons),
+        operationStatus: vehicle.operationStatus ?? 'active',
+      } : EMPTY_VEHICLE)
+    } else {
+      const driver = editor.mode === 'edit' ? editor.driver : editor.driver
+      setDraft(driver ? {
+        orgId: driver.orgId ?? '',
+        displayName: driver.displayName ?? '',
+        phone: driver.phone ?? '',
+        licenseNumber: driver.licenseNumber ?? '',
+        licenseClass: driver.licenseClass ?? '',
+        licenseExpiresOn: driver.licenseExpiresOn ?? '',
+        qualificationNumber: driver.qualificationNumber ?? '',
+        qualificationExpiresOn: driver.qualificationExpiresOn ?? '',
+        employmentStatus: driver.employmentStatus ?? 'active',
+        riskLabel: driver.riskLabel ?? 'normal',
+      } : EMPTY_DRIVER)
     }
   }, [editor])
 
@@ -129,7 +237,7 @@ export default function ManagementPage() {
     parameters: 'Parameters',
   }[section]
 
-  const canCreate = section === 'devices' || section === 'organizations'
+  const canCreate = section !== 'parameters'
 
   async function saveEditor() {
     try {
@@ -152,7 +260,7 @@ export default function ManagementPage() {
         } else {
           await updateOrg.mutateAsync({ orgId: editor.org.orgId, payload })
         }
-      } else {
+      } else if (editor.kind === 'device') {
         const body = draft as DeviceDraft
         const payload = {
           orgId: body.orgId.trim(),
@@ -172,6 +280,47 @@ export default function ManagementPage() {
         } else {
           await updateDevice.mutateAsync({ deviceId: editor.device.deviceId, payload })
         }
+      } else if (editor.kind === 'vehicle') {
+        const body = draft as VehicleDraft
+        const capacityTons = body.capacityTons.trim() ? Number(body.capacityTons) : null
+        if (capacityTons !== null && Number.isNaN(capacityTons)) {
+          throw new Error('capacity tons must be numeric')
+        }
+        const payload = {
+          orgId: body.orgId.trim(),
+          deviceId: blank(body.deviceId),
+          plateNumber: body.plateNumber.trim(),
+          plateColor: body.plateColor,
+          vin: blank(body.vin),
+          vehicleKind: body.vehicleKind,
+          fuelKind: blank(body.fuelKind),
+          capacityTons,
+          operationStatus: body.operationStatus,
+        }
+        if (editor.mode === 'create') {
+          await createVehicle.mutateAsync(payload)
+        } else {
+          await updateVehicle.mutateAsync({ vehicleId: editor.vehicle.vehicleId, payload })
+        }
+      } else {
+        const body = draft as DriverDraft
+        const payload = {
+          orgId: body.orgId.trim(),
+          displayName: body.displayName.trim(),
+          phone: blank(body.phone),
+          licenseNumber: blank(body.licenseNumber),
+          licenseClass: blank(body.licenseClass),
+          licenseExpiresOn: blank(body.licenseExpiresOn),
+          qualificationNumber: blank(body.qualificationNumber),
+          qualificationExpiresOn: blank(body.qualificationExpiresOn),
+          employmentStatus: body.employmentStatus,
+          riskLabel: body.riskLabel,
+        }
+        if (editor.mode === 'create') {
+          await createDriver.mutateAsync(payload)
+        } else {
+          await updateDriver.mutateAsync({ driverId: editor.driver.driverId, payload })
+        }
       }
       setEditor(null)
     } catch (err) {
@@ -180,15 +329,14 @@ export default function ManagementPage() {
   }
 
   async function removeEditor(kind: EditorKind, id: string) {
-    const ok = window.confirm(`Delete this ${kind === 'org' ? 'organization' : 'device'}?`)
+    const ok = window.confirm(`Delete this ${kind === 'org' ? 'organization' : kind === 'device' ? 'device' : kind === 'vehicle' ? 'vehicle' : 'driver'}?`)
     if (!ok) return
     try {
       setError(null)
-      if (kind === 'org') {
-        await deleteOrg.mutateAsync(id)
-      } else {
-        await deleteDevice.mutateAsync(id)
-      }
+      if (kind === 'org') await deleteOrg.mutateAsync(id)
+      else if (kind === 'device') await deleteDevice.mutateAsync(id)
+      else if (kind === 'vehicle') await deleteVehicle.mutateAsync(id)
+      else await deleteDriver.mutateAsync(id)
     } catch (err) {
       setError(readError(err))
     }
@@ -219,7 +367,12 @@ export default function ManagementPage() {
           <button
             className="btn-secondary"
             disabled={!canCreate}
-            onClick={() => setEditor(section === 'devices' ? { kind: 'device', mode: 'create' } : { kind: 'org', mode: 'create' })}
+            onClick={() => {
+              if (section === 'devices') setEditor({ kind: 'device', mode: 'create' })
+              else if (section === 'organizations') setEditor({ kind: 'org', mode: 'create' })
+              else if (section === 'vehicles') setEditor({ kind: 'vehicle', mode: 'create' })
+              else if (section === 'drivers') setEditor({ kind: 'driver', mode: 'create' })
+            }}
           >
             Add
           </button>
@@ -280,8 +433,22 @@ export default function ManagementPage() {
           />
         )}
 
-        {section === 'vehicles' && <VehiclesTable search={search} />}
-        {section === 'drivers' && <DriversTable search={search} />}
+        {section === 'vehicles' && (
+          <VehiclesTable
+            search={search}
+            onCreate={() => setEditor({ kind: 'vehicle', mode: 'create' })}
+            onEdit={vehicle => setEditor({ kind: 'vehicle', mode: 'edit', vehicle })}
+            onDelete={vehicleId => void removeEditor('vehicle', vehicleId)}
+          />
+        )}
+        {section === 'drivers' && (
+          <DriversTable
+            search={search}
+            onCreate={() => setEditor({ kind: 'driver', mode: 'create' })}
+            onEdit={driver => setEditor({ kind: 'driver', mode: 'edit', driver })}
+            onDelete={driverId => void removeEditor('driver', driverId)}
+          />
+        )}
         {section === 'parameters' && <ParametersTable search={search} />}
       </div>
 
@@ -290,11 +457,16 @@ export default function ManagementPage() {
           editor={editor}
           draft={draft}
           orgOptions={orgs}
+          deviceOptions={devices}
           busy={
             createOrg.isPending ||
             updateOrg.isPending ||
             createDevice.isPending ||
-            updateDevice.isPending
+            updateDevice.isPending ||
+            createVehicle.isPending ||
+            updateVehicle.isPending ||
+            createDriver.isPending ||
+            updateDriver.isPending
           }
           onClose={() => setEditor(null)}
           onSubmit={saveEditor}
@@ -393,7 +565,17 @@ function OrganizationsTable({
   )
 }
 
-function VehiclesTable({ search }: { search: string }) {
+function VehiclesTable({
+  search,
+  onCreate,
+  onEdit,
+  onDelete,
+}: {
+  search: string
+  onCreate: () => void
+  onEdit: (vehicle: VehicleAsset) => void
+  onDelete: (vehicleId: string) => void
+}) {
   const { data: vehicles = [], isLoading } = useVehicleAssets()
   const rows = filterRows(vehicles, search, v => [
     v.plateNumber, v.vin, v.orgName, v.terminalId, v.vehicleKind, v.operationStatus, v.currentDriverName,
@@ -403,7 +585,7 @@ function VehiclesTable({ search }: { search: string }) {
     <RegistryTable
       loading={isLoading}
       empty="No vehicle assets"
-      headers={['Plate', 'Organization', 'Terminal', 'Kind', 'Fuel', 'Driver', 'Status']}
+      headers={['Plate', 'Organization', 'Terminal', 'Kind', 'Fuel', 'Driver', 'Status', 'Actions']}
       rows={rows.map(v => [
         <Mono key="plate" strong>{v.plateNumber}</Mono>,
         v.orgName,
@@ -412,12 +594,30 @@ function VehiclesTable({ search }: { search: string }) {
         v.fuelKind ?? '-',
         v.currentDriverName ?? '-',
         <StatusPill key="status" label={v.operationStatus} tone={v.operationStatus === 'active' ? 'ok' : 'muted'} />,
+        <RowActions
+          key="actions"
+          onEdit={() => onEdit(v)}
+          onDelete={() => onDelete(v.vehicleId)}
+          canDelete={v.currentDriverId == null}
+        />,
       ])}
+      onCreate={onCreate}
+      createLabel="Add vehicle"
     />
   )
 }
 
-function DriversTable({ search }: { search: string }) {
+function DriversTable({
+  search,
+  onCreate,
+  onEdit,
+  onDelete,
+}: {
+  search: string
+  onCreate: () => void
+  onEdit: (driver: DriverProfile) => void
+  onDelete: (driverId: string) => void
+}) {
   const { data: drivers = [], isLoading } = useDriverProfiles()
   const rows = filterRows(drivers, search, d => [
     d.displayName, d.phone, d.orgName, d.licenseNumber, d.qualificationNumber, d.riskLabel, d.currentVehiclePlate,
@@ -427,7 +627,7 @@ function DriversTable({ search }: { search: string }) {
     <RegistryTable
       loading={isLoading}
       empty="No driver profiles"
-      headers={['Driver', 'Organization', 'Phone', 'License', 'Qualification', 'Vehicle', 'Risk', 'Status']}
+      headers={['Driver', 'Organization', 'Phone', 'License', 'Qualification', 'Vehicle', 'Risk', 'Status', 'Actions']}
       rows={rows.map(d => [
         d.displayName,
         d.orgName,
@@ -437,7 +637,15 @@ function DriversTable({ search }: { search: string }) {
         d.currentVehiclePlate ?? '-',
         <StatusPill key="risk" label={d.riskLabel} tone={d.riskLabel === 'normal' ? 'ok' : 'warn'} />,
         <StatusPill key="status" label={d.employmentStatus} tone={d.employmentStatus === 'active' ? 'ok' : 'muted'} />,
+        <RowActions
+          key="actions"
+          onEdit={() => onEdit(d)}
+          onDelete={() => onDelete(d.driverId)}
+          canDelete={d.currentVehiclePlate == null}
+        />,
       ])}
+      onCreate={onCreate}
+      createLabel="Add driver"
     />
   )
 }
@@ -544,22 +752,28 @@ function EditorDialog({
   editor,
   draft,
   orgOptions,
+  deviceOptions,
   busy,
   onClose,
   onSubmit,
   onChange,
 }: {
   editor: EditorState
-  draft: OrgDraft | DeviceDraft
+  draft: OrgDraft | DeviceDraft | VehicleDraft | DriverDraft
   orgOptions: OrgUnit[]
+  deviceOptions: RegistryDevice[]
   busy: boolean
   onClose: () => void
   onSubmit: () => void
-  onChange: (draft: OrgDraft | DeviceDraft) => void
+  onChange: (draft: OrgDraft | DeviceDraft | VehicleDraft | DriverDraft) => void
 }) {
   const title = editor.kind === 'org'
     ? editor.mode === 'create' ? 'Add organization' : 'Edit organization'
-    : editor.mode === 'create' ? 'Add device' : 'Edit device'
+    : editor.kind === 'device'
+      ? editor.mode === 'create' ? 'Add device' : 'Edit device'
+      : editor.kind === 'vehicle'
+        ? editor.mode === 'create' ? 'Add vehicle' : 'Edit vehicle'
+        : editor.mode === 'create' ? 'Add driver' : 'Edit driver'
 
   return (
     <div
@@ -597,8 +811,12 @@ function EditorDialog({
         <div className="p-5 space-y-4">
           {editor.kind === 'org' ? (
             <OrgForm draft={draft as OrgDraft} orgOptions={orgOptions} onChange={next => onChange(next)} />
-          ) : (
+          ) : editor.kind === 'device' ? (
             <DeviceForm draft={draft as DeviceDraft} orgOptions={orgOptions} onChange={next => onChange(next)} />
+          ) : editor.kind === 'vehicle' ? (
+            <VehicleForm draft={draft as VehicleDraft} orgOptions={orgOptions} deviceOptions={deviceOptions} onChange={next => onChange(next)} />
+          ) : (
+            <DriverForm draft={draft as DriverDraft} orgOptions={orgOptions} onChange={next => onChange(next)} />
           )}
 
           <div className="flex items-center justify-end gap-2 pt-2">
@@ -729,6 +947,133 @@ function DeviceForm({
           <option value="active">active</option>
           <option value="disabled">disabled</option>
           <option value="archived">archived</option>
+        </select>
+      </Field>
+    </div>
+  )
+}
+
+function VehicleForm({
+  draft,
+  orgOptions,
+  deviceOptions,
+  onChange,
+}: {
+  draft: VehicleDraft
+  orgOptions: OrgUnit[]
+  deviceOptions: RegistryDevice[]
+  onChange: (next: VehicleDraft) => void
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <Field label="Organization">
+        <select value={draft.orgId} onChange={e => onChange({ ...draft, orgId: e.target.value })}>
+          <option value="">Select organization</option>
+          {orgOptions.map(org => (
+            <option key={org.orgId} value={org.orgId}>{org.orgName}</option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Terminal device">
+        <select value={draft.deviceId} onChange={e => onChange({ ...draft, deviceId: e.target.value })}>
+          <option value="">None</option>
+          {deviceOptions.map(device => (
+            <option key={device.deviceId} value={device.deviceId}>
+              {device.terminalId} · {device.orgName}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Plate number">
+        <input value={draft.plateNumber} onChange={e => onChange({ ...draft, plateNumber: e.target.value })} placeholder="GARUDA-001" />
+      </Field>
+      <Field label="Plate color">
+        <select value={draft.plateColor} onChange={e => onChange({ ...draft, plateColor: e.target.value })}>
+          <option value="blue">blue</option>
+          <option value="yellow">yellow</option>
+          <option value="black">black</option>
+          <option value="white">white</option>
+          <option value="green">green</option>
+          <option value="other">other</option>
+        </select>
+      </Field>
+      <Field label="VIN">
+        <input value={draft.vin} onChange={e => onChange({ ...draft, vin: e.target.value })} />
+      </Field>
+      <Field label="Vehicle kind">
+        <input value={draft.vehicleKind} onChange={e => onChange({ ...draft, vehicleKind: e.target.value })} />
+      </Field>
+      <Field label="Fuel kind">
+        <input value={draft.fuelKind} onChange={e => onChange({ ...draft, fuelKind: e.target.value })} />
+      </Field>
+      <Field label="Capacity tons">
+        <input type="number" step="0.1" value={draft.capacityTons} onChange={e => onChange({ ...draft, capacityTons: e.target.value })} placeholder="12.5" />
+      </Field>
+      <Field label="Operation status" className="col-span-2">
+        <select value={draft.operationStatus} onChange={e => onChange({ ...draft, operationStatus: e.target.value })}>
+          <option value="active">active</option>
+          <option value="parked">parked</option>
+          <option value="maintenance">maintenance</option>
+          <option value="retired">retired</option>
+        </select>
+      </Field>
+    </div>
+  )
+}
+
+function DriverForm({
+  draft,
+  orgOptions,
+  onChange,
+}: {
+  draft: DriverDraft
+  orgOptions: OrgUnit[]
+  onChange: (next: DriverDraft) => void
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <Field label="Organization">
+        <select value={draft.orgId} onChange={e => onChange({ ...draft, orgId: e.target.value })}>
+          <option value="">Select organization</option>
+          {orgOptions.map(org => (
+            <option key={org.orgId} value={org.orgId}>{org.orgName}</option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Display name">
+        <input value={draft.displayName} onChange={e => onChange({ ...draft, displayName: e.target.value })} placeholder="Arjun Singh" />
+      </Field>
+      <Field label="Phone">
+        <input value={draft.phone} onChange={e => onChange({ ...draft, phone: e.target.value })} />
+      </Field>
+      <Field label="License number">
+        <input value={draft.licenseNumber} onChange={e => onChange({ ...draft, licenseNumber: e.target.value })} />
+      </Field>
+      <Field label="License class">
+        <input value={draft.licenseClass} onChange={e => onChange({ ...draft, licenseClass: e.target.value })} />
+      </Field>
+      <Field label="License expires on">
+        <input type="date" value={draft.licenseExpiresOn} onChange={e => onChange({ ...draft, licenseExpiresOn: e.target.value })} />
+      </Field>
+      <Field label="Qualification number">
+        <input value={draft.qualificationNumber} onChange={e => onChange({ ...draft, qualificationNumber: e.target.value })} />
+      </Field>
+      <Field label="Qualification expires on">
+        <input type="date" value={draft.qualificationExpiresOn} onChange={e => onChange({ ...draft, qualificationExpiresOn: e.target.value })} />
+      </Field>
+      <Field label="Employment status">
+        <select value={draft.employmentStatus} onChange={e => onChange({ ...draft, employmentStatus: e.target.value })}>
+          <option value="active">active</option>
+          <option value="off_duty">off_duty</option>
+          <option value="suspended">suspended</option>
+          <option value="archived">archived</option>
+        </select>
+      </Field>
+      <Field label="Risk label">
+        <select value={draft.riskLabel} onChange={e => onChange({ ...draft, riskLabel: e.target.value })}>
+          <option value="normal">normal</option>
+          <option value="watch">watch</option>
+          <option value="high_risk">high_risk</option>
         </select>
       </Field>
     </div>

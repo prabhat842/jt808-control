@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -403,6 +404,154 @@ public class RegistryApi {
         return ok(Map.of("result", "deleted", "deviceId", deviceId));
     }
 
+    @PostMapping("/vehicles")
+    public ResponseEntity<Map<String, Object>> createVehicle(@RequestBody VehiclePayload payload) {
+        String vehicleId = blankToNull(payload.vehicleId()) != null ? payload.vehicleId() : generateVehicleId(payload.plateNumber());
+        validateVehiclePayload(payload, vehicleId);
+        if (exists("SELECT COUNT(*) FROM garuda_registry.vehicle_asset WHERE vehicle_id = ?", vehicleId)) {
+            return conflict("vehicle already exists: " + vehicleId);
+        }
+        jdbc.update("""
+                INSERT INTO garuda_registry.vehicle_asset
+                    (vehicle_id, org_id, device_id, plate_number, plate_color, vin, vehicle_kind, fuel_kind, capacity_tons, operation_status)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                vehicleId,
+                payload.orgId().trim(),
+                blankToNull(payload.deviceId()),
+                payload.plateNumber().trim(),
+                defaultIfBlank(payload.plateColor(), "blue"),
+                blankToNull(payload.vin()),
+                defaultIfBlank(payload.vehicleKind(), "commercial"),
+                blankToNull(payload.fuelKind()),
+                payload.capacityTons(),
+                defaultIfBlank(payload.operationStatus(), "active"));
+        return ok(Map.of("result", "created", "vehicleId", vehicleId));
+    }
+
+    @PutMapping("/vehicles/{vehicleId}")
+    public ResponseEntity<Map<String, Object>> updateVehicle(
+            @PathVariable String vehicleId,
+            @RequestBody VehiclePayload payload) {
+        validateVehiclePayload(payload, vehicleId);
+        if (!exists("SELECT COUNT(*) FROM garuda_registry.vehicle_asset WHERE vehicle_id = ?", vehicleId)) {
+            return notFound("vehicle not found: " + vehicleId);
+        }
+        jdbc.update("""
+                UPDATE garuda_registry.vehicle_asset
+                   SET org_id = ?,
+                       device_id = ?,
+                       plate_number = ?,
+                       plate_color = ?,
+                       vin = ?,
+                       vehicle_kind = ?,
+                       fuel_kind = ?,
+                       capacity_tons = ?,
+                       operation_status = ?,
+                       updated_at = CURRENT_TIMESTAMP
+                 WHERE vehicle_id = ?
+                """,
+                payload.orgId().trim(),
+                blankToNull(payload.deviceId()),
+                payload.plateNumber().trim(),
+                defaultIfBlank(payload.plateColor(), "blue"),
+                blankToNull(payload.vin()),
+                defaultIfBlank(payload.vehicleKind(), "commercial"),
+                blankToNull(payload.fuelKind()),
+                payload.capacityTons(),
+                defaultIfBlank(payload.operationStatus(), "active"),
+                vehicleId);
+        return ok(Map.of("result", "updated", "vehicleId", vehicleId));
+    }
+
+    @DeleteMapping("/vehicles/{vehicleId}")
+    public ResponseEntity<Map<String, Object>> deleteVehicle(@PathVariable String vehicleId) {
+        if (!exists("SELECT COUNT(*) FROM garuda_registry.vehicle_asset WHERE vehicle_id = ?", vehicleId)) {
+            return notFound("vehicle not found: " + vehicleId);
+        }
+        if (exists("SELECT COUNT(*) FROM garuda_registry.driver_vehicle_assignment WHERE vehicle_id = ? AND ended_at IS NULL", vehicleId)) {
+            return conflict("vehicle has an active driver assignment");
+        }
+        jdbc.update("DELETE FROM garuda_registry.vehicle_asset WHERE vehicle_id = ?", vehicleId);
+        return ok(Map.of("result", "deleted", "vehicleId", vehicleId));
+    }
+
+    @PostMapping("/drivers")
+    public ResponseEntity<Map<String, Object>> createDriver(@RequestBody DriverPayload payload) {
+        String driverId = blankToNull(payload.driverId()) != null ? payload.driverId() : generateDriverId(payload.displayName());
+        validateDriverPayload(payload, driverId);
+        if (exists("SELECT COUNT(*) FROM garuda_registry.driver_profile WHERE driver_id = ?", driverId)) {
+            return conflict("driver already exists: " + driverId);
+        }
+        jdbc.update("""
+                INSERT INTO garuda_registry.driver_profile
+                    (driver_id, org_id, display_name, phone, license_number, license_class, license_expires_on,
+                     qualification_number, qualification_expires_on, employment_status, risk_label)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                driverId,
+                payload.orgId().trim(),
+                payload.displayName().trim(),
+                blankToNull(payload.phone()),
+                blankToNull(payload.licenseNumber()),
+                blankToNull(payload.licenseClass()),
+                parseDate(payload.licenseExpiresOn()),
+                blankToNull(payload.qualificationNumber()),
+                parseDate(payload.qualificationExpiresOn()),
+                defaultIfBlank(payload.employmentStatus(), "active"),
+                defaultIfBlank(payload.riskLabel(), "normal"));
+        return ok(Map.of("result", "created", "driverId", driverId));
+    }
+
+    @PutMapping("/drivers/{driverId}")
+    public ResponseEntity<Map<String, Object>> updateDriver(
+            @PathVariable String driverId,
+            @RequestBody DriverPayload payload) {
+        validateDriverPayload(payload, driverId);
+        if (!exists("SELECT COUNT(*) FROM garuda_registry.driver_profile WHERE driver_id = ?", driverId)) {
+            return notFound("driver not found: " + driverId);
+        }
+        jdbc.update("""
+                UPDATE garuda_registry.driver_profile
+                   SET org_id = ?,
+                       display_name = ?,
+                       phone = ?,
+                       license_number = ?,
+                       license_class = ?,
+                       license_expires_on = ?,
+                       qualification_number = ?,
+                       qualification_expires_on = ?,
+                       employment_status = ?,
+                       risk_label = ?,
+                       updated_at = CURRENT_TIMESTAMP
+                 WHERE driver_id = ?
+                """,
+                payload.orgId().trim(),
+                payload.displayName().trim(),
+                blankToNull(payload.phone()),
+                blankToNull(payload.licenseNumber()),
+                blankToNull(payload.licenseClass()),
+                parseDate(payload.licenseExpiresOn()),
+                blankToNull(payload.qualificationNumber()),
+                parseDate(payload.qualificationExpiresOn()),
+                defaultIfBlank(payload.employmentStatus(), "active"),
+                defaultIfBlank(payload.riskLabel(), "normal"),
+                driverId);
+        return ok(Map.of("result", "updated", "driverId", driverId));
+    }
+
+    @DeleteMapping("/drivers/{driverId}")
+    public ResponseEntity<Map<String, Object>> deleteDriver(@PathVariable String driverId) {
+        if (!exists("SELECT COUNT(*) FROM garuda_registry.driver_profile WHERE driver_id = ?", driverId)) {
+            return notFound("driver not found: " + driverId);
+        }
+        if (exists("SELECT COUNT(*) FROM garuda_registry.driver_vehicle_assignment WHERE driver_id = ? AND ended_at IS NULL", driverId)) {
+            return conflict("driver has an active vehicle assignment");
+        }
+        jdbc.update("DELETE FROM garuda_registry.driver_profile WHERE driver_id = ?", driverId);
+        return ok(Map.of("result", "deleted", "driverId", driverId));
+    }
+
     private int count(String table) {
         Integer value = jdbc.queryForObject("SELECT COUNT(*) FROM " + table, Integer.class);
         return value == null ? 0 : value;
@@ -436,6 +585,26 @@ public class RegistryApi {
         return value == null || value.isBlank() ? fallback : value.trim();
     }
 
+    private static String generateVehicleId(String plateNumber) {
+        String base = slug(plateNumber);
+        return base.isBlank() ? "veh-" + java.util.UUID.randomUUID().toString().substring(0, 8) : "veh-" + base;
+    }
+
+    private static String generateDriverId(String displayName) {
+        String base = slug(displayName);
+        return base.isBlank() ? "drv-" + java.util.UUID.randomUUID().toString().substring(0, 8) : "drv-" + base;
+    }
+
+    private static java.sql.Date parseDate(String value) {
+        String trimmed = blankToNull(value);
+        if (trimmed == null) return null;
+        try {
+            return java.sql.Date.valueOf(LocalDate.parse(trimmed));
+        } catch (Exception e) {
+            throw new IllegalArgumentException("invalid date: " + trimmed);
+        }
+    }
+
     private static void validateOrgPayload(OrgUnitPayload payload, String orgId) {
         if (payload == null) throw new IllegalArgumentException("request body is required");
         if (orgId == null || orgId.isBlank()) throw new IllegalArgumentException("orgId/orgCode is required");
@@ -449,6 +618,20 @@ public class RegistryApi {
         if (payload.orgId() == null || payload.orgId().isBlank()) throw new IllegalArgumentException("orgId is required");
         if (payload.terminalId() == null || payload.terminalId().isBlank()) throw new IllegalArgumentException("terminalId is required");
         if (payload.sim() == null || payload.sim().isBlank()) throw new IllegalArgumentException("sim is required");
+    }
+
+    private static void validateVehiclePayload(VehiclePayload payload, String vehicleId) {
+        if (payload == null) throw new IllegalArgumentException("request body is required");
+        if (vehicleId == null || vehicleId.isBlank()) throw new IllegalArgumentException("vehicleId/plateNumber is required");
+        if (payload.orgId() == null || payload.orgId().isBlank()) throw new IllegalArgumentException("orgId is required");
+        if (payload.plateNumber() == null || payload.plateNumber().isBlank()) throw new IllegalArgumentException("plateNumber is required");
+    }
+
+    private static void validateDriverPayload(DriverPayload payload, String driverId) {
+        if (payload == null) throw new IllegalArgumentException("request body is required");
+        if (driverId == null || driverId.isBlank()) throw new IllegalArgumentException("driverId/displayName is required");
+        if (payload.orgId() == null || payload.orgId().isBlank()) throw new IllegalArgumentException("orgId is required");
+        if (payload.displayName() == null || payload.displayName().isBlank()) throw new IllegalArgumentException("displayName is required");
     }
 
     private ResponseEntity<Map<String, Object>> ok(Map<String, Object> body) {
@@ -510,4 +693,29 @@ public class RegistryApi {
             String hardwareVersion,
             String installStatus,
             String lifecycleStatus) {}
+
+    public record VehiclePayload(
+            String vehicleId,
+            String orgId,
+            String deviceId,
+            String plateNumber,
+            String plateColor,
+            String vin,
+            String vehicleKind,
+            String fuelKind,
+            Double capacityTons,
+            String operationStatus) {}
+
+    public record DriverPayload(
+            String driverId,
+            String orgId,
+            String displayName,
+            String phone,
+            String licenseNumber,
+            String licenseClass,
+            String licenseExpiresOn,
+            String qualificationNumber,
+            String qualificationExpiresOn,
+            String employmentStatus,
+            String riskLabel) {}
 }

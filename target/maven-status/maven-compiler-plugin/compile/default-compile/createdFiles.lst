@@ -1,5 +1,6 @@
 com/example/control/service/ServiceDefinition.class
 com/example/control/api/RegistryApi.class
+com/example/control/api/RegistryApi$VehiclePayload.class
 com/example/control/api/RegistryApi$DevicePayload.class
 com/example/control/service/ProcessOrchestrator.class
 com/example/control/service/ManagedProcess$State.class
@@ -9,5 +10,6 @@ com/example/control/service/ProcessOrchestrator$StatusDto.class
 com/example/control/service/ProcessOrchestrator$ServiceConfig.class
 com/example/control/api/UiProperties.class
 com/example/control/service/ManagedProcess.class
+com/example/control/api/RegistryApi$DriverPayload.class
 com/example/control/api/RootController.class
 com/example/control/ControlPanelApplication.class

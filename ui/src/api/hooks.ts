@@ -266,6 +266,100 @@ export function useDeleteRegistryDevice() {
   })
 }
 
+export function useCreateVehicleAsset() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: Partial<VehicleAsset> & { orgId: string; plateNumber: string }) =>
+      client.post('/registry/vehicles', payload).then(r => r.data),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['registry-vehicles'] }),
+        qc.invalidateQueries({ queryKey: ['registry-summary'] }),
+        qc.invalidateQueries({ queryKey: ['registry-org-units'] }),
+        qc.invalidateQueries({ queryKey: ['registry-drivers'] }),
+      ])
+    },
+  })
+}
+
+export function useUpdateVehicleAsset() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ vehicleId, payload }: { vehicleId: string; payload: Partial<VehicleAsset> & { orgId: string; plateNumber: string } }) =>
+      client.put(`/registry/vehicles/${encodeURIComponent(vehicleId)}`, payload).then(r => r.data),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['registry-vehicles'] }),
+        qc.invalidateQueries({ queryKey: ['registry-summary'] }),
+        qc.invalidateQueries({ queryKey: ['registry-org-units'] }),
+        qc.invalidateQueries({ queryKey: ['registry-drivers'] }),
+      ])
+    },
+  })
+}
+
+export function useDeleteVehicleAsset() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (vehicleId: string) => client.delete(`/registry/vehicles/${encodeURIComponent(vehicleId)}`).then(r => r.data),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['registry-vehicles'] }),
+        qc.invalidateQueries({ queryKey: ['registry-summary'] }),
+        qc.invalidateQueries({ queryKey: ['registry-org-units'] }),
+        qc.invalidateQueries({ queryKey: ['registry-drivers'] }),
+      ])
+    },
+  })
+}
+
+export function useCreateDriverProfile() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: Partial<DriverProfile> & { orgId: string; displayName: string }) =>
+      client.post('/registry/drivers', payload).then(r => r.data),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['registry-drivers'] }),
+        qc.invalidateQueries({ queryKey: ['registry-summary'] }),
+        qc.invalidateQueries({ queryKey: ['registry-org-units'] }),
+        qc.invalidateQueries({ queryKey: ['registry-vehicles'] }),
+      ])
+    },
+  })
+}
+
+export function useUpdateDriverProfile() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ driverId, payload }: { driverId: string; payload: Partial<DriverProfile> & { orgId: string; displayName: string } }) =>
+      client.put(`/registry/drivers/${encodeURIComponent(driverId)}`, payload).then(r => r.data),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['registry-drivers'] }),
+        qc.invalidateQueries({ queryKey: ['registry-summary'] }),
+        qc.invalidateQueries({ queryKey: ['registry-org-units'] }),
+        qc.invalidateQueries({ queryKey: ['registry-vehicles'] }),
+      ])
+    },
+  })
+}
+
+export function useDeleteDriverProfile() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (driverId: string) => client.delete(`/registry/drivers/${encodeURIComponent(driverId)}`).then(r => r.data),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['registry-drivers'] }),
+        qc.invalidateQueries({ queryKey: ['registry-summary'] }),
+        qc.invalidateQueries({ queryKey: ['registry-org-units'] }),
+        qc.invalidateQueries({ queryKey: ['registry-vehicles'] }),
+      ])
+    },
+  })
+}
+
 export function useVehicleAssets() {
   return useQuery<VehicleAsset[]>({
     queryKey: ['registry-vehicles'],
