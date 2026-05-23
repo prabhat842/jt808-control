@@ -8,6 +8,10 @@ const STREAM_TYPES = [
   { value: 4, label: 'Broadcast' },
 ]
 
+function idMatches(jt808Id: string, rtvsId: string) {
+  return jt808Id === rtvsId || jt808Id.endsWith(rtvsId) || rtvsId.endsWith(jt808Id)
+}
+
 export default function MediaPage() {
   const config = useConfig()
   const { data: terminals = [] } = useTerminals()
@@ -20,7 +24,7 @@ export default function MediaPage() {
   const [streamType, setStreamType] = useState(0)
 
   const activeSession = sessions.find(
-    s => s.terminalId === terminal && s.channelId === channel && s.active
+    s => idMatches(terminal, s.terminalId) && s.channelId === channel && s.active
   )
 
   const sel = {
@@ -69,7 +73,7 @@ export default function MediaPage() {
             </div>
             <div className="flex gap-2">
               <button className="btn-primary" style={{ flex: 1, justifyContent: 'center' }}
-                onClick={() => startLive.mutate({ terminal, channel })}
+                onClick={() => startLive.mutate({ terminal, channel, type: streamType })}
                 disabled={!terminal || startLive.isPending}>▶ Start</button>
               <button className="btn-secondary" style={{ flex: 1, justifyContent: 'center' }}
                 onClick={() => stopLive.mutate({ terminal, channel })}
@@ -87,10 +91,12 @@ export default function MediaPage() {
             <div className="eyebrow text-[9px] mb-2">Active Sessions</div>
             {sessions.length === 0
               ? <div className="font-mono text-[11px]" style={{ color: 'var(--muted)' }}>No active sessions</div>
-              : sessions.map(s => (
+              : sessions.map(s => {
+                const fullTerminal = terminals.find(t => idMatches(t.terminalId, s.terminalId))?.terminalId ?? s.terminalId
+                return (
                 <div key={`${s.terminalId}-${s.channelId}`} className="surface-panel-quiet px-3 py-2 mb-1">
                   <div className="flex items-center justify-between">
-                    <span className="font-mono text-[11px]" style={{ color: 'var(--electric)' }}>{s.terminalId}</span>
+                    <span className="font-mono text-[11px]" style={{ color: 'var(--electric)' }}>{fullTerminal}</span>
                     <span className="font-mono text-[9px] px-1.5 py-0.5"
                       style={{ background: s.active ? 'var(--status-ok-soft)' : 'var(--surface-2)', border: `1px solid ${s.active ? 'var(--status-ok-border)' : 'var(--border)'}`, borderRadius: '4px', color: s.active ? 'var(--status-ok)' : 'var(--muted)' }}>
                       {s.active ? '● active' : '○ idle'}
@@ -100,9 +106,9 @@ export default function MediaPage() {
                     Ch {s.channelId} · {s.frames.toLocaleString()} frames · {(s.bytes / 1024).toFixed(1)} KB
                   </div>
                   <button className="btn-secondary mt-1.5" style={{ fontSize: '10px', padding: '2px 8px' }}
-                    onClick={() => stopLive.mutate({ terminal: s.terminalId, channel: s.channelId })}>■ Stop</button>
+                    onClick={() => stopLive.mutate({ terminal: fullTerminal, channel: s.channelId })}>■ Stop</button>
                 </div>
-              ))
+              )})
             }
           </div>
         </div>

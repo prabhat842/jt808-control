@@ -105,7 +105,7 @@ public class ControlApi {
 
     @GetMapping(value = "/sessions", produces = MediaType.APPLICATION_JSON_VALUE)
     public CompletableFuture<ResponseEntity<String>> sessions() {
-        return proxyAsync(serverUrl + "/api/media/sessions");
+        return proxyAsync(rtvsUrl + "/api/sessions");
     }
 
     @GetMapping(value = "/gps/latest", produces = MediaType.APPLICATION_JSON_VALUE)

@@ -102,6 +102,7 @@ public final class ManagedProcess {
         state = State.STOPPING;
         Process p = process;
         if (p == null) { state = State.STOPPED; pid = -1; return; }
+        List<ProcessHandle> children = p.descendants().toList();
 
         int timeoutSec = def.getShutdownTimeoutSec();
         appendLog("--- stopping (SIGTERM, timeout=" + timeoutSec + "s) ---");
@@ -120,6 +121,7 @@ public final class ManagedProcess {
             p.destroyForcibly();
         }
 
+        stopChildren(children);
         exitCode = p.exitValue();
         process  = null;
         state    = State.STOPPED;
@@ -219,6 +221,33 @@ public final class ManagedProcess {
         } catch (Exception e) {
             log.warn("evictOrphan({}) failed: {}", pattern,
                     e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
+        }
+    }
+
+    private void stopChildren(List<ProcessHandle> children) {
+        if (children.isEmpty()) return;
+        for (ProcessHandle child : children) {
+            if (child.isAlive()) {
+                appendLog("--- stopping child pid=" + child.pid() + " ---");
+                child.destroy();
+            }
+        }
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
+        for (ProcessHandle child : children) {
+            if (!child.isAlive()) continue;
+            long remaining = deadline - System.nanoTime();
+            if (remaining <= 0) break;
+            try {
+                child.onExit().get(remaining, TimeUnit.NANOSECONDS);
+            } catch (Exception ignored) {
+                // Escalation below handles stubborn children.
+            }
+        }
+        for (ProcessHandle child : children) {
+            if (child.isAlive()) {
+                appendLog("--- child " + child.pid() + " did not exit, force-killing ---");
+                child.destroyForcibly();
+            }
         }
     }
 

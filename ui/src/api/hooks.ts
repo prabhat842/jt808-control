@@ -66,8 +66,8 @@ export function useMediaSessions() {
 export function useStartLive() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ terminal, channel }: { terminal: string; channel: number }) =>
-      client.get('/live/start', { params: { terminal, channel } }).then(r => r.data),
+    mutationFn: ({ terminal, channel, type = 0 }: { terminal: string; channel: number; type?: number }) =>
+      client.get('/live/start', { params: { terminal, channel, type } }).then(r => r.data),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['media-sessions'] }),
   })
 }
