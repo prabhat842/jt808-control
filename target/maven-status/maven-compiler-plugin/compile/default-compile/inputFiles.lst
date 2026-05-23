@@ -1,5 +1,8 @@
+/home/prabhat/jt808-control/src/main/java/com/example/control/api/RegistryApi.java
 /home/prabhat/jt808-control/src/main/java/com/example/control/api/ControlApi.java
 /home/prabhat/jt808-control/src/main/java/com/example/control/service/ManagedProcess.java
+/home/prabhat/jt808-control/src/main/java/com/example/control/api/UiProperties.java
 /home/prabhat/jt808-control/src/main/java/com/example/control/service/ProcessOrchestrator.java
 /home/prabhat/jt808-control/src/main/java/com/example/control/ControlPanelApplication.java
 /home/prabhat/jt808-control/src/main/java/com/example/control/service/ServiceDefinition.java
+/home/prabhat/jt808-control/src/main/java/com/example/control/api/RootController.java

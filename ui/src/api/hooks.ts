@@ -1,7 +1,21 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import client from './client'
-import type { Terminal, MediaSession, AlarmClip, ServiceStatus, LatestPosition, RecentAlarm, AlarmFile } from '../types'
+import type {
+  Terminal,
+  MediaSession,
+  AlarmClip,
+  ServiceStatus,
+  LatestPosition,
+  RecentAlarm,
+  AlarmFile,
+  RegistrySummary,
+  OrgUnit,
+  RegistryDevice,
+  VehicleAsset,
+  DriverProfile,
+  ParameterProfile,
+} from '../types'
 
 // ── Services ──────────────────────────────────────────────────────────────
 
@@ -125,4 +139,150 @@ export function useClipSse(onClip: (clip: AlarmClip) => void) {
     })
     return () => es.close()
   }, [onClip])
+}
+
+// ── Garuda Registry / Management Center ──────────────────────────────────
+
+export function useRegistrySummary() {
+  return useQuery<RegistrySummary>({
+    queryKey: ['registry-summary'],
+    queryFn: () => client.get('/registry/summary').then(r => r.data),
+    refetchInterval: 10000,
+  })
+}
+
+export function useOrgUnits() {
+  return useQuery<OrgUnit[]>({
+    queryKey: ['registry-org-units'],
+    queryFn: () => client.get('/registry/org-units').then(r => r.data),
+  })
+}
+
+export function useCreateOrgUnit() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: Partial<OrgUnit> & { orgCode: string; orgName: string }) =>
+      client.post('/registry/org-units', payload).then(r => r.data),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['registry-org-units'] }),
+        qc.invalidateQueries({ queryKey: ['registry-summary'] }),
+        qc.invalidateQueries({ queryKey: ['registry-devices'] }),
+        qc.invalidateQueries({ queryKey: ['registry-vehicles'] }),
+        qc.invalidateQueries({ queryKey: ['registry-drivers'] }),
+        qc.invalidateQueries({ queryKey: ['registry-parameter-profiles'] }),
+      ])
+    },
+  })
+}
+
+export function useUpdateOrgUnit() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ orgId, payload }: { orgId: string; payload: Partial<OrgUnit> & { orgCode: string; orgName: string } }) =>
+      client.put(`/registry/org-units/${encodeURIComponent(orgId)}`, payload).then(r => r.data),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['registry-org-units'] }),
+        qc.invalidateQueries({ queryKey: ['registry-summary'] }),
+        qc.invalidateQueries({ queryKey: ['registry-devices'] }),
+        qc.invalidateQueries({ queryKey: ['registry-vehicles'] }),
+        qc.invalidateQueries({ queryKey: ['registry-drivers'] }),
+        qc.invalidateQueries({ queryKey: ['registry-parameter-profiles'] }),
+      ])
+    },
+  })
+}
+
+export function useDeleteOrgUnit() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (orgId: string) => client.delete(`/registry/org-units/${encodeURIComponent(orgId)}`).then(r => r.data),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['registry-org-units'] }),
+        qc.invalidateQueries({ queryKey: ['registry-summary'] }),
+        qc.invalidateQueries({ queryKey: ['registry-devices'] }),
+        qc.invalidateQueries({ queryKey: ['registry-vehicles'] }),
+        qc.invalidateQueries({ queryKey: ['registry-drivers'] }),
+        qc.invalidateQueries({ queryKey: ['registry-parameter-profiles'] }),
+      ])
+    },
+  })
+}
+
+export function useRegistryDevices() {
+  return useQuery<RegistryDevice[]>({
+    queryKey: ['registry-devices'],
+    queryFn: () => client.get('/registry/devices').then(r => r.data),
+    refetchInterval: 10000,
+  })
+}
+
+export function useCreateRegistryDevice() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (payload: Partial<RegistryDevice> & { orgId: string; terminalId: string; sim: string }) =>
+      client.post('/registry/devices', payload).then(r => r.data),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['registry-devices'] }),
+        qc.invalidateQueries({ queryKey: ['registry-summary'] }),
+        qc.invalidateQueries({ queryKey: ['registry-org-units'] }),
+        qc.invalidateQueries({ queryKey: ['registry-vehicles'] }),
+      ])
+    },
+  })
+}
+
+export function useUpdateRegistryDevice() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ deviceId, payload }: { deviceId: string; payload: Partial<RegistryDevice> & { orgId: string; terminalId: string; sim: string } }) =>
+      client.put(`/registry/devices/${encodeURIComponent(deviceId)}`, payload).then(r => r.data),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['registry-devices'] }),
+        qc.invalidateQueries({ queryKey: ['registry-summary'] }),
+        qc.invalidateQueries({ queryKey: ['registry-org-units'] }),
+        qc.invalidateQueries({ queryKey: ['registry-vehicles'] }),
+      ])
+    },
+  })
+}
+
+export function useDeleteRegistryDevice() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (deviceId: string) => client.delete(`/registry/devices/${encodeURIComponent(deviceId)}`).then(r => r.data),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['registry-devices'] }),
+        qc.invalidateQueries({ queryKey: ['registry-summary'] }),
+        qc.invalidateQueries({ queryKey: ['registry-org-units'] }),
+        qc.invalidateQueries({ queryKey: ['registry-vehicles'] }),
+      ])
+    },
+  })
+}
+
+export function useVehicleAssets() {
+  return useQuery<VehicleAsset[]>({
+    queryKey: ['registry-vehicles'],
+    queryFn: () => client.get('/registry/vehicles').then(r => r.data),
+  })
+}
+
+export function useDriverProfiles() {
+  return useQuery<DriverProfile[]>({
+    queryKey: ['registry-drivers'],
+    queryFn: () => client.get('/registry/drivers').then(r => r.data),
+  })
+}
+
+export function useParameterProfiles() {
+  return useQuery<ParameterProfile[]>({
+    queryKey: ['registry-parameter-profiles'],
+    queryFn: () => client.get('/registry/parameter-profiles').then(r => r.data),
+  })
 }

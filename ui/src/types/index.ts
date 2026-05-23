@@ -87,3 +87,87 @@ export interface AlarmFile {
   path: string
   uploadTime: string
 }
+
+export interface RegistrySummary {
+  organizations: number
+  devices: number
+  vehicles: number
+  drivers: number
+  profiles: number
+}
+
+export interface OrgUnit {
+  orgId: string
+  parentOrgId: string | null
+  orgCode: string
+  orgName: string
+  orgKind: string
+  status: string
+  contactName: string | null
+  contactPhone: string | null
+  parentOrgName: string | null
+  deviceCount: number
+  vehicleCount: number
+}
+
+export interface RegistryDevice {
+  deviceId: string
+  orgId: string
+  orgName: string
+  terminalId: string
+  sim: string
+  protocolFamily: string
+  protocolVersion: string
+  deviceModel: string | null
+  manufacturerId: string | null
+  firmwareVersion: string | null
+  hardwareVersion: string | null
+  installStatus: string
+  lifecycleStatus: string
+  lastSeenAt: string | null
+  plateNumber: string | null
+  channelCount: number
+}
+
+export interface VehicleAsset {
+  vehicleId: string
+  orgId: string
+  orgName: string
+  deviceId: string | null
+  terminalId: string | null
+  plateNumber: string
+  plateColor: string
+  vin: string | null
+  vehicleKind: string
+  fuelKind: string | null
+  capacityTons: number | null
+  operationStatus: string
+  currentDriverId: string | null
+  currentDriverName: string | null
+}
+
+export interface DriverProfile {
+  driverId: string
+  orgId: string
+  orgName: string
+  displayName: string
+  phone: string | null
+  licenseNumber: string | null
+  licenseClass: string | null
+  licenseExpiresOn: string | null
+  qualificationNumber: string | null
+  qualificationExpiresOn: string | null
+  employmentStatus: string
+  riskLabel: string
+  currentVehiclePlate: string | null
+}
+
+export interface ParameterProfile {
+  profileId: string
+  orgId: string
+  orgName: string
+  profileName: string
+  description: string | null
+  profileStatus: string
+  itemCount: number
+}

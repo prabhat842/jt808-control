@@ -9,6 +9,7 @@ import VehiclesPage from './pages/vehicles/VehiclesPage'
 import AlarmsPage   from './pages/alarms/AlarmsPage'
 import MediaPage    from './pages/media/MediaPage'
 import ServicesPage from './pages/services/ServicesPage'
+import ManagementPage from './pages/management/ManagementPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -45,6 +46,7 @@ export default function App() {
                 <Route path="alarms"   element={<AlarmsPage />} />
                 <Route path="media"    element={<MediaPage />} />
                 <Route path="services" element={<ServicesPage />} />
+                <Route path="management" element={<ManagementPage />} />
               </Route>
             </Routes>
           </HashRouter>

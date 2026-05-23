@@ -1,24 +1,10 @@
-import { useState, useCallback } from 'react'
-import { useAlarmClips, useClipSse } from '../../api/hooks'
-import type { AlarmClip } from '../../types'
-
-const FORMAT: Record<number, string> = { 0:'JPEG', 1:'TIF', 2:'MP3', 3:'WAV', 4:'WMV' }
+import { useState } from 'react'
+import { useRecentAlarms } from '../../api/hooks'
+import type { RecentAlarm } from '../../types'
 
 export default function AlarmsPage() {
-  const { data: initial = [] } = useAlarmClips()
-  const [live, setLive]        = useState<AlarmClip[]>([])
-  const [selected, setSelected] = useState<AlarmClip | null>(null)
-
-  const onClip = useCallback((clip: AlarmClip) => {
-    setLive(prev => [clip, ...prev].slice(0, 200))
-  }, [])
-  useClipSse(onClip)
-
-  const seen = new Set<string>()
-  const clips = [...live, ...initial].filter(c => {
-    if (seen.has(c.id)) return false
-    seen.add(c.id); return true
-  })
+  const { data: alarms = [] } = useRecentAlarms(200)
+  const [selected, setSelected] = useState<RecentAlarm | null>(null)
 
   return (
     <div className="flex h-full" style={{ background: 'var(--background)' }}>
@@ -26,9 +12,9 @@ export default function AlarmsPage() {
       <div className="flex-1 p-6 overflow-auto space-y-5">
         <div className="flex items-center justify-between">
           <div>
-            <div className="eyebrow text-[9px] mb-1">Real-time Feed</div>
+            <div className="eyebrow text-[9px] mb-1">Alarm History</div>
             <h1 className="font-display text-xl font-semibold" style={{ color: 'var(--foreground-strong)' }}>
-              Alarm Media
+              Vehicle Alarms
             </h1>
           </div>
           <div className="flex items-center gap-2">
@@ -36,24 +22,24 @@ export default function AlarmsPage() {
               <span className="status-dot-inner" style={{ background: 'var(--electric)', color: 'var(--electric)' }} />
             </span>
             <span className="font-mono text-[11px]" style={{ color: 'var(--muted-strong)' }}>
-              {clips.length} clips · live
+              {alarms.length} rows · ClickHouse
             </span>
           </div>
         </div>
 
         <div className="surface-panel overflow-hidden">
-          {clips.length === 0 ? (
+          {alarms.length === 0 ? (
             <div className="px-5 py-8 text-center">
               <div className="text-3xl mb-3 opacity-20">◉</div>
               <div className="font-mono text-[12px]" style={{ color: 'var(--muted)' }}>
-                No alarm clips received yet
+                No alarm records received yet
               </div>
             </div>
           ) : (
             <table className="w-full">
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  {['Time', 'Terminal', 'Alarm', 'Media', 'Ch', 'Size', ''].map(h => (
+                  {['Time', 'Vehicle', 'SIM', 'Alarm', 'Level', 'Location', 'Speed'].map(h => (
                     <th
                       key={h}
                       className="text-left px-5 py-3 font-mono text-[10px] uppercase tracking-[0.2em]"
@@ -65,20 +51,23 @@ export default function AlarmsPage() {
                 </tr>
               </thead>
               <tbody>
-                {clips.map((c, i) => (
+                {alarms.map((a, i) => (
                   <tr
-                    key={c.id}
-                    onClick={() => setSelected(c)}
+                    key={a.alarmId}
+                    onClick={() => setSelected(a)}
                     className="cursor-pointer transition-colors"
-                    style={{ borderBottom: i < clips.length - 1 ? '1px solid var(--border)' : 'none' }}
+                    style={{ borderBottom: i < alarms.length - 1 ? '1px solid var(--border)' : 'none' }}
                     onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-1)')}
                     onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                   >
                     <td className="px-5 py-2.5 font-mono text-[11px]" style={{ color: 'var(--muted)' }}>
-                      {new Date(c.receivedAt).toLocaleString()}
+                      {new Date(a.receivedAt).toLocaleString()}
                     </td>
                     <td className="py-2.5 pr-4 font-mono text-[11px]" style={{ color: 'var(--electric)' }}>
-                      {c.terminalId}
+                      {a.vehicleId}
+                    </td>
+                    <td className="py-2.5 pr-4 font-mono text-[11px]" style={{ color: 'var(--muted-strong)' }}>
+                      {a.sim}
                     </td>
                     <td className="py-2.5 pr-4">
                       <span
@@ -90,31 +79,17 @@ export default function AlarmsPage() {
                           color: 'var(--status-warn)',
                         }}
                       >
-                        {c.alarmTypeName}
+                        {a.alarmType}
                       </span>
                     </td>
-                    <td className="py-2.5 pr-4 font-mono text-[11px]" style={{ color: 'var(--muted-strong)' }}>
-                      {c.mediaTypeName} · {FORMAT[c.formatCode] ?? c.formatCode}
+                    <td className="py-2.5 pr-4 font-mono text-[11px]" style={{ color: 'var(--muted)' }}>
+                      {a.alarmLevel}
                     </td>
                     <td className="py-2.5 pr-4 font-mono text-[11px]" style={{ color: 'var(--muted)' }}>
-                      {c.channelId}
+                      {a.lat.toFixed(4)}, {a.lon.toFixed(4)}
                     </td>
                     <td className="py-2.5 pr-4 font-mono text-[11px]" style={{ color: 'var(--muted)' }}>
-                      {c.payloadSize > 0 ? `${c.payloadSize} B` : '—'}
-                    </td>
-                    <td className="py-2.5 pr-5">
-                      {c.fileName && (
-                        <a
-                          href={`/media/clips/${c.fileName}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={e => e.stopPropagation()}
-                          className="font-mono text-[11px] transition-colors"
-                          style={{ color: 'var(--electric)' }}
-                        >
-                          ↓ File
-                        </a>
-                      )}
+                      {a.speed.toFixed(1)} km/h
                     </td>
                   </tr>
                 ))}
@@ -138,7 +113,7 @@ export default function AlarmsPage() {
             style={{ borderBottom: '1px solid var(--border)' }}
           >
             <span className="font-display text-sm font-medium" style={{ color: 'var(--foreground-strong)' }}>
-              Clip Detail
+              Alarm Detail
             </span>
             <button
               onClick={() => setSelected(null)}
@@ -152,15 +127,15 @@ export default function AlarmsPage() {
           <div className="p-4 space-y-3">
             <div className="surface-panel-quiet p-3 space-y-2.5">
               {([
-                ['ID',       selected.id.slice(0, 8) + '…'],
-                ['Terminal', selected.terminalId],
-                ['Alarm',    selected.alarmTypeName],
-                ['Media',    `${selected.mediaTypeName} / ${FORMAT[selected.formatCode] ?? selected.formatCode}`],
-                ['Channel',  String(selected.channelId)],
+                ['Alarm ID', selected.alarmId],
+                ['Vehicle',  selected.vehicleId],
+                ['SIM',      selected.sim],
+                ['Type',     String(selected.alarmType)],
+                ['Level',    String(selected.alarmLevel)],
                 ['Location', `${selected.lat.toFixed(4)}, ${selected.lon.toFixed(4)}`],
-                ['Speed',    `${selected.speedKmh} km/h`],
+                ['Speed',    `${selected.speed} km/h`],
+                ['Alarm At', new Date(selected.alarmStartTime).toLocaleString()],
                 ['Received', new Date(selected.receivedAt).toLocaleString()],
-                ['Size',     selected.payloadSize > 0 ? `${selected.payloadSize} B` : 'no payload'],
               ] as [string, string][]).map(([label, value]) => (
                 <div key={label}>
                   <div className="eyebrow text-[9px]">{label}</div>
@@ -170,17 +145,6 @@ export default function AlarmsPage() {
                 </div>
               ))}
             </div>
-
-            {selected.fileName && (
-              <a
-                href={`/media/clips/${selected.fileName}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-primary w-full justify-center"
-              >
-                ↓ Download file
-              </a>
-            )}
           </div>
         </div>
       )}

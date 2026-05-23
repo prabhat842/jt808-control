@@ -7,6 +7,7 @@ const NAV = [
   { to: '/alarms',    label: 'Alarms',   icon: '◉' },
   { to: '/media',     label: 'Media',    icon: '▶' },
   { to: '/services',  label: 'Services', icon: '⚙' },
+  { to: '/management', label: 'Manage',   icon: '▦' },
 ]
 
 const active = {

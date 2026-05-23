@@ -1,26 +1,20 @@
-import { useEffect, useState, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ServiceStatus } from '../types'
 
 // ── Stage definitions ─────────────────────────────────────────────────────────
 
 type StageStatus = 'pending' | 'running' | 'ok' | 'warn'
 
 interface Stage {
-  label:    string
-  check?:   () => Promise<void>
-  ms?:      number           // fixed delay when no check
+  label: string
+  status: StageStatus
 }
 
-const STAGES: Stage[] = [
-  { label: 'Initializing Garuda runtime',         ms: 500 },
-  { label: 'Connecting to control plane',
-    check: () => fetch('/api/config').then(r => { if (!r.ok) throw new Error() }) },
-  { label: 'Loading fleet configuration',          ms: 600 },
-  { label: 'Verifying service registry',
-    check: () => fetch('/api/status').then(r => { if (!r.ok) throw new Error() }) },
-  { label: 'Calibrating geospatial index',         ms: 700 },
-  { label: 'Establishing terminal bus',            ms: 400 },
-  { label: 'System ready',                         ms: 500 },
-]
+const REQUIRED_SERVICE_IDS = ['server', 'rtvs'] as const
+const REQUIRED_SERVICE_LABELS: Record<(typeof REQUIRED_SERVICE_IDS)[number], string> = {
+  server: 'JT808 Server',
+  rtvs: 'RTVS Media Server',
+}
 
 // ── Background node network ───────────────────────────────────────────────────
 
@@ -96,10 +90,12 @@ interface Props {
 }
 
 export default function SplashScreen({ onComplete }: Props) {
-  const [progress,  setProgress]  = useState(0)
-  const [stageLog,  setStageLog]  = useState<{ label: string; status: StageStatus }[]>([])
-  const [exiting,     setExiting]     = useState(false)
-  const [scanY,       setScanY]       = useState(-4)
+  const [progress, setProgress] = useState(0)
+  const [stageLog, setStageLog] = useState<Stage[]>([
+    { label: 'Booting control panel', status: 'running' },
+  ])
+  const [exiting, setExiting] = useState(false)
+  const [scanY, setScanY] = useState(-4)
   const rafRef = useRef<number>(0)
   const startRef = useRef<number>(0)
 
@@ -115,46 +111,103 @@ export default function SplashScreen({ onComplete }: Props) {
     return () => cancelAnimationFrame(rafRef.current)
   }, [])
 
-  // Run stages
+  const upsertStage = useCallback((label: string, status: StageStatus) => {
+    setStageLog(prev => {
+      const index = prev.findIndex(stage => stage.label === label)
+      if (index === -1) return [...prev, { label, status }]
+      const next = [...prev]
+      next[index] = { label, status }
+      return next
+    })
+  }, [])
+
+  const setServiceStages = useCallback((services: ServiceStatus[]) => {
+    for (const id of REQUIRED_SERVICE_IDS) {
+      const svc = services.find(s => s.id === id)
+      upsertStage(REQUIRED_SERVICE_LABELS[id], svc?.running ? 'ok' : 'running')
+    }
+  }, [upsertStage])
+
+  // Run startup checks against the live control plane and wait for the core servers.
   useEffect(() => {
     let cancelled = false
-    const perStage = 100 / STAGES.length
+    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+    const statusUrl = '/api/status'
+    const configUrl = '/api/config'
+    let requestedStart = false
+
+    const setStartupProgress = (services: ServiceStatus[], controlReady: boolean, started: boolean) => {
+      const runningRequired = REQUIRED_SERVICE_IDS.filter(id => services.find(s => s.id === id)?.running).length
+      const base = controlReady ? 25 : 5
+      const statusWeight = controlReady ? 20 : 0
+      const startWeight = started ? 15 : 0
+      const serviceWeight = Math.round((runningRequired / REQUIRED_SERVICE_IDS.length) * 60)
+      setProgress(Math.min(100, base + statusWeight + startWeight + serviceWeight))
+    }
 
     async function run() {
-      for (let i = 0; i < STAGES.length; i++) {
+      try {
+        upsertStage('Connecting to control plane', 'running')
+        setProgress(8)
+        const configResp = await fetch(configUrl)
+        if (!configResp.ok) throw new Error('control config unavailable')
         if (cancelled) return
-        const stage = STAGES[i]
+        upsertStage('Connecting to control plane', 'ok')
 
-        setStageLog(prev => [...prev, { label: stage.label, status: 'running' }])
+        upsertStage('Reading service registry', 'running')
+        const statusResp = await fetch(statusUrl)
+        if (!statusResp.ok) throw new Error('service registry unavailable')
+        let services = await statusResp.json() as ServiceStatus[]
+        if (cancelled) return
+        upsertStage('Reading service registry', 'ok')
+        setServiceStages(services)
+        setStartupProgress(services, true, false)
 
-        let ok = true
-        if (stage.check) {
-          try   { await stage.check() }
-          catch { ok = false }
+        const needsStart = REQUIRED_SERVICE_IDS.some(id => !services.find(s => s.id === id)?.running)
+        if (needsStart) {
+          upsertStage('Starting managed services automatically', 'running')
+          const startResp = await fetch('/api/start-all', { method: 'POST' })
+          if (!startResp.ok) throw new Error('unable to start services')
+          requestedStart = true
+          if (cancelled) return
+          upsertStage('Starting managed services automatically', 'ok')
         } else {
-          await sleep(stage.ms ?? 400)
+          upsertStage('Starting managed services automatically', 'ok')
         }
 
+        while (!cancelled) {
+          const pollResp = await fetch(statusUrl)
+          if (!pollResp.ok) throw new Error('status poll failed')
+          services = await pollResp.json() as ServiceStatus[]
+          if (cancelled) return
+
+          setServiceStages(services)
+          setStartupProgress(services, true, requestedStart)
+
+          const allReady = REQUIRED_SERVICE_IDS.every(id => services.find(s => s.id === id)?.running)
+          if (allReady) {
+            upsertStage('Startup complete', 'ok')
+            setProgress(100)
+            await sleep(500)
+            if (cancelled) return
+            setExiting(true)
+            await sleep(700)
+            if (!cancelled) onComplete()
+            return
+          }
+
+          await sleep(1000)
+        }
+      } catch {
         if (cancelled) return
-        setStageLog(prev => prev.map((s, j) =>
-          j === i ? { ...s, status: ok ? 'ok' : 'warn' } : s
-        ))
-        setProgress(Math.round((i + 1) * perStage))
-
-        // brief pause between stages so the log is readable
-        await sleep(120)
+        upsertStage('Control plane unavailable', 'warn')
+        setProgress(10)
       }
-
-      if (cancelled) return
-      await sleep(600)
-      setExiting(true)
-      await sleep(700)
-      if (!cancelled) onComplete()
     }
 
     run()
     return () => { cancelled = true }
-  }, [onComplete])
+  }, [onComplete, setServiceStages, upsertStage])
 
   const visibleLog = stageLog.slice(-5)
 
@@ -291,9 +344,9 @@ export default function SplashScreen({ onComplete }: Props) {
             display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
             marginBottom: '8px',
           }}>
-            <span style={{ fontFamily: 'var(--ff-mono)', fontSize: '10px', color: 'var(--muted)', letterSpacing: '0.1em' }}>
-              INITIALIZING
-            </span>
+              <span style={{ fontFamily: 'var(--ff-mono)', fontSize: '10px', color: 'var(--muted)', letterSpacing: '0.1em' }}>
+              STARTING STACK
+              </span>
             <span style={{
               fontFamily: 'var(--ff-mono)', fontSize: '13px', fontWeight: 500,
               color: 'var(--electric)',
@@ -364,8 +417,4 @@ export default function SplashScreen({ onComplete }: Props) {
       `}</style>
     </div>
   )
-}
-
-function sleep(ms: number) {
-  return new Promise<void>(r => setTimeout(r, ms))
 }

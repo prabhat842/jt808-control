@@ -15,7 +15,10 @@ function demoCoord(terminalId: string, home: [number, number]): [number, number]
 
 export default function FleetPage() {
   const config = useConfig()
-  const home: [number, number] = [config.mapCenterLon, config.mapCenterLat]
+  const home = useMemo<[number, number]>(
+    () => [config.mapCenterLon, config.mapCenterLat],
+    [config.mapCenterLon, config.mapCenterLat],
+  )
 
   const mapContainer = useRef<HTMLDivElement>(null)
   const mapRef       = useRef<mapboxgl.Map | null>(null)
@@ -70,7 +73,7 @@ export default function FleetPage() {
     })
     mapRef.current.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'bottom-right')
     return () => { mapRef.current?.remove(); mapRef.current = null }
-  }, [home, config.mapZoom, config.mapboxToken])
+  }, [home[0], home[1], config.mapZoom, config.mapboxToken])
 
   useEffect(() => {
     const map = mapRef.current
@@ -89,9 +92,10 @@ export default function FleetPage() {
       const existingMarker = markersRef.current.get(t.terminalId)
       if (existingMarker) {
         existingMarker.setLngLat(coord)
-        existingMarker.setPopup(new mapboxgl.Popup({ offset: 14, closeButton: false }).setHTML(
-          popupHtml(t, gps, alarmByTerminal.get(t.terminalId), alarmCounts.get(t.terminalId) ?? 0)
-        ))
+        const popup = existingMarker.getPopup()
+        if (popup?.isOpen()) {
+          popup.setHTML(popupHtml(t, gps, alarmByTerminal.get(t.terminalId), alarmCounts.get(t.terminalId) ?? 0))
+        }
         continue
       }
       const el = document.createElement('div')
@@ -114,7 +118,7 @@ export default function FleetPage() {
       el.addEventListener('click', () => setSelected(t))
       markersRef.current.set(t.terminalId, nextMarker)
     }
-  }, [filteredTerminals, posMap, home, alarmByTerminal, alarmCounts])
+  }, [filteredTerminals, posMap, home[0], home[1], alarmByTerminal, alarmCounts])
 
   const activeStreams = mediaSessions.filter(s => s.active).length
   const gpsOnline = positions.length
