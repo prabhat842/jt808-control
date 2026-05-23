@@ -1,7 +1,6 @@
 package com.example.control.api;
 
 import com.example.control.service.ProcessOrchestrator;
-import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -115,29 +114,40 @@ public class ControlApi {
     }
 
     @GetMapping(value = "/alarms", produces = MediaType.APPLICATION_JSON_VALUE)
-    public CompletableFuture<ResponseEntity<String>> alarms(HttpServletRequest req) {
-        String qs = req.getQueryString();
-        return proxyAsync(serverUrl + "/api/alarms" + (qs != null ? "?" + qs : ""));
+    public CompletableFuture<ResponseEntity<String>> alarms(
+            @RequestParam(defaultValue = "200") int limit) {
+        // limit is typed int — no injection possible
+        int safe = Math.max(1, Math.min(limit, 1000));
+        return proxyAsync(serverUrl + "/api/alarms?limit=" + safe);
     }
 
     @GetMapping(value = "/alarm-files", produces = MediaType.APPLICATION_JSON_VALUE)
-    public CompletableFuture<ResponseEntity<String>> alarmFiles(HttpServletRequest req) {
-        String qs = req.getQueryString();
-        return proxyAsync(serverUrl + "/api/alarm-files" + (qs != null ? "?" + qs : ""));
+    public CompletableFuture<ResponseEntity<String>> alarmFiles(
+            @RequestParam String alarmId) {
+        // URL-encode alarmId before forwarding
+        String encoded = java.net.URLEncoder.encode(alarmId, java.nio.charset.StandardCharsets.UTF_8);
+        return proxyAsync(serverUrl + "/api/alarm-files?alarmId=" + encoded);
     }
 
     // ── RTVS proxy (live stream start/stop) ──────────────────────────────
 
     @GetMapping(value = "/live/start", produces = MediaType.APPLICATION_JSON_VALUE)
-    public CompletableFuture<ResponseEntity<String>> liveStart(HttpServletRequest req) {
-        String qs = req.getQueryString();
-        return proxyAsync(rtvsUrl + "/api/live/start" + (qs != null ? "?" + qs : ""));
+    public CompletableFuture<ResponseEntity<String>> liveStart(
+            @RequestParam String terminal,
+            @RequestParam(defaultValue = "1") int channel,
+            @RequestParam(defaultValue = "0") int type,
+            @RequestParam(defaultValue = "false") boolean restart) {
+        String encoded = java.net.URLEncoder.encode(terminal, java.nio.charset.StandardCharsets.UTF_8);
+        return proxyAsync(rtvsUrl + "/api/live/start?terminal=" + encoded
+                + "&channel=" + channel + "&type=" + type + "&restart=" + restart);
     }
 
     @GetMapping(value = "/live/stop", produces = MediaType.APPLICATION_JSON_VALUE)
-    public CompletableFuture<ResponseEntity<String>> liveStop(HttpServletRequest req) {
-        String qs = req.getQueryString();
-        return proxyAsync(rtvsUrl + "/api/live/stop" + (qs != null ? "?" + qs : ""));
+    public CompletableFuture<ResponseEntity<String>> liveStop(
+            @RequestParam String terminal,
+            @RequestParam(defaultValue = "1") int channel) {
+        String encoded = java.net.URLEncoder.encode(terminal, java.nio.charset.StandardCharsets.UTF_8);
+        return proxyAsync(rtvsUrl + "/api/live/stop?terminal=" + encoded + "&channel=" + channel);
     }
 
     @GetMapping(value = "/clips", produces = MediaType.APPLICATION_JSON_VALUE)
