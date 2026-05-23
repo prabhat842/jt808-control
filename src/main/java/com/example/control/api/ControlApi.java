@@ -45,6 +45,7 @@ public class ControlApi {
     public String config() {
         return "{"
             + "\"rtvsUrl\":\""     + uiProperties.getRtvsBrowserUrl() + "\","
+            + "\"mapboxToken\":\"" + uiProperties.getMapboxToken()    + "\","
             + "\"mapCenterLat\":"  + uiProperties.getMapCenterLat()   + ","
             + "\"mapCenterLon\":"  + uiProperties.getMapCenterLon()   + ","
             + "\"mapZoom\":"       + uiProperties.getMapZoom()

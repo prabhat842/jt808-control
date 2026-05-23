@@ -324,9 +324,10 @@ spring:
 
 ## 7. Mapbox Token
 
-The Mapbox public token (`pk.*`) is baked into the React JS bundle at
-build time. This is the intended Mapbox model for browser tokens, but
-**it must be domain-restricted** so it cannot be used from other origins.
+The Mapbox public token (`pk.*`) is injected into the React UI at runtime
+through `/api/config`, so it is no longer baked into the static bundle.
+This is the intended Mapbox model for browser tokens, but **it must be
+domain-restricted** so it cannot be used from other origins.
 
 **Steps:**
 1. Log in to [account.mapbox.com](https://account.mapbox.com)

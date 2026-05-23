@@ -5,6 +5,7 @@ import client from './client'
 
 export interface UiConfig {
   rtvsUrl:      string
+  mapboxToken:  string
   mapCenterLat: number
   mapCenterLon: number
   mapZoom:      number
@@ -12,6 +13,7 @@ export interface UiConfig {
 
 const DEFAULTS: UiConfig = {
   rtvsUrl:      'http://localhost:8089',
+  mapboxToken:  '',
   mapCenterLat: 22.8046,
   mapCenterLon: 86.2029,
   mapZoom:      11,

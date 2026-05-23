@@ -23,6 +23,9 @@ public class UiProperties {
     /** Default Mapbox zoom level. */
     private int mapZoom = 11;
 
+    /** Public Mapbox token injected at runtime, not baked into the frontend bundle. */
+    private String mapboxToken = "";
+
     public String getRtvsBrowserUrl()               { return rtvsBrowserUrl; }
     public void   setRtvsBrowserUrl(String url)     { this.rtvsBrowserUrl = url; }
 
@@ -34,4 +37,7 @@ public class UiProperties {
 
     public int  getMapZoom()                        { return mapZoom; }
     public void setMapZoom(int v)                   { this.mapZoom = v; }
+
+    public String getMapboxToken()                  { return mapboxToken; }
+    public void   setMapboxToken(String token)      { this.mapboxToken = token; }
 }

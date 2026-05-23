@@ -1,10 +1,8 @@
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect, useMemo, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
-import { useTerminals, useMediaSessions, useLatestPositions } from '../../api/hooks'
+import { useTerminals, useMediaSessions, useLatestPositions, useRecentAlarms } from '../../api/hooks'
 import { useConfig } from '../../api/config'
-import type { Terminal, MediaSession } from '../../types'
-
-mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN
+import type { Terminal, MediaSession, LatestPosition, RecentAlarm } from '../../types'
 
 function demoCoord(terminalId: string, home: [number, number]): [number, number] {
   let h = 0
@@ -23,15 +21,47 @@ export default function FleetPage() {
   const mapRef       = useRef<mapboxgl.Map | null>(null)
   const markersRef   = useRef<Map<string, mapboxgl.Marker>>(new Map())
   const [selected, setSelected] = useState<Terminal | null>(null)
+  const [search, setSearch] = useState('')
 
   const { data: terminals = [] }     = useTerminals()
   const { data: mediaSessions = [] } = useMediaSessions()
   const { data: positions = [] }     = useLatestPositions()
+  const { data: alarms = [] }        = useRecentAlarms(120)
 
-  const posMap = new Map(positions.map(p => [p.sim, p]))
+  const filteredTerminals = useMemo(() => {
+    const term = search.trim().toLowerCase()
+    if (!term) return terminals
+    return terminals.filter(t =>
+      t.terminalId.toLowerCase().includes(term) ||
+      (t.plateNumber || '').toLowerCase().includes(term) ||
+      (t.manufacturerId || '').toLowerCase().includes(term)
+    )
+  }, [terminals, search])
+
+  const posMap = useMemo(() => new Map(positions.map(p => [p.sim, p])), [positions])
+  const alarmByTerminal = useMemo(() => {
+    const map = new Map<string, RecentAlarm>()
+    for (const alarm of alarms) {
+      if (!map.has(alarm.sim)) map.set(alarm.sim, alarm)
+    }
+    return map
+  }, [alarms])
+  const alarmCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const alarm of alarms) counts.set(alarm.sim, (counts.get(alarm.sim) ?? 0) + 1)
+    return counts
+  }, [alarms])
+  const selectedPosition = selected ? posMap.get(selected.terminalId) : undefined
+  const selectedAlarm = selected ? alarmByTerminal.get(selected.terminalId) : undefined
+  const selectedAlarmCount = selected ? (alarmCounts.get(selected.terminalId) ?? 0) : 0
 
   useEffect(() => {
-    if (!mapContainer.current || mapRef.current) return
+    if (!config.mapboxToken) return
+    mapboxgl.accessToken = config.mapboxToken
+  }, [config.mapboxToken])
+
+  useEffect(() => {
+    if (!mapContainer.current || mapRef.current || !config.mapboxToken) return
     mapRef.current = new mapboxgl.Map({
       container: mapContainer.current,
       style: 'mapbox://styles/mapbox/dark-v11',
@@ -40,24 +70,28 @@ export default function FleetPage() {
     })
     mapRef.current.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'bottom-right')
     return () => { mapRef.current?.remove(); mapRef.current = null }
-  }, [])
+  }, [home, config.mapZoom, config.mapboxToken])
 
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
-    const current = new Set(terminals.map(t => t.terminalId))
+    const current = new Set(filteredTerminals.map(t => t.terminalId))
 
     for (const [id, marker] of markersRef.current) {
       if (!current.has(id)) { marker.remove(); markersRef.current.delete(id) }
     }
 
-    for (const t of terminals) {
+    for (const t of filteredTerminals) {
       const gps   = posMap.get(t.terminalId)
       const coord: [number, number] = gps
         ? [gps.lon, gps.lat]
         : demoCoord(t.terminalId, home)
-      if (markersRef.current.has(t.terminalId)) {
-        markersRef.current.get(t.terminalId)!.setLngLat(coord)
+      const existingMarker = markersRef.current.get(t.terminalId)
+      if (existingMarker) {
+        existingMarker.setLngLat(coord)
+        existingMarker.setPopup(new mapboxgl.Popup({ offset: 14, closeButton: false }).setHTML(
+          popupHtml(t, gps, alarmByTerminal.get(t.terminalId), alarmCounts.get(t.terminalId) ?? 0)
+        ))
         continue
       }
       const el = document.createElement('div')
@@ -70,28 +104,36 @@ export default function FleetPage() {
       el.addEventListener('mouseenter', () => { el.style.transform = 'scale(1.4)' })
       el.addEventListener('mouseleave', () => { el.style.transform = 'scale(1)' })
 
-      const marker = new mapboxgl.Marker({ element: el })
+      const nextMarker = new mapboxgl.Marker({ element: el })
         .setLngLat(coord)
         .setPopup(new mapboxgl.Popup({ offset: 14, closeButton: false }).setHTML(
-          `<div style="font-family:var(--ff-mono);font-size:11px;color:var(--foreground-strong)">
-            <div style="color:var(--electric);font-weight:500">${t.plateNumber || t.terminalId}</div>
-            <div style="color:var(--muted);margin-top:2px">${t.terminalId}</div>
-          </div>`
+          popupHtml(t, gps, alarmByTerminal.get(t.terminalId), alarmCounts.get(t.terminalId) ?? 0)
         ))
         .addTo(map)
 
       el.addEventListener('click', () => setSelected(t))
-      markersRef.current.set(t.terminalId, marker)
+      markersRef.current.set(t.terminalId, nextMarker)
     }
-  }, [terminals, posMap, home])
+  }, [filteredTerminals, posMap, home, alarmByTerminal, alarmCounts])
 
   const activeStreams = mediaSessions.filter(s => s.active).length
+  const gpsOnline = positions.length
+  const activeAlarms = alarms.length
+  const mapReady = Boolean(config.mapboxToken)
 
   return (
     <div className="flex h-full" style={{ background: 'var(--background)' }}>
       {/* Map */}
       <div className="flex-1 relative">
-        <div ref={mapContainer} className="w-full h-full" />
+        {mapReady ? (
+          <div ref={mapContainer} className="w-full h-full" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center technical-grid" style={{ color: 'var(--muted)' }}>
+            <div className="surface-panel-quiet px-4 py-3 font-mono text-[11px]" style={{ maxWidth: '320px' }}>
+              Mapbox token is not configured.
+            </div>
+          </div>
+        )}
 
         {/* Overlay stats */}
         <div
@@ -103,11 +145,13 @@ export default function FleetPage() {
             padding: '10px 14px',
             backdropFilter: 'blur(8px)',
           }}
-        >
+          >
           <div className="eyebrow-electric font-mono text-[9px] tracking-[0.26em] uppercase mb-2">
             Fleet Status
           </div>
           <StatRow label="Online" value={String(terminals.length)} highlight />
+          <StatRow label="GPS" value={String(gpsOnline)} />
+          <StatRow label="Alarms" value={String(activeAlarms)} />
           <StatRow label="Streams" value={String(activeStreams)} />
         </div>
 
@@ -134,15 +178,32 @@ export default function FleetPage() {
         >
           {selected ? selected.terminalId : 'Connected Terminals'}
         </div>
+        <div className="px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search terminal / plate…"
+            className="font-mono text-[11px] px-3 py-2 w-full focus:outline-none"
+            style={{
+              background: 'var(--surface-1)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)',
+              color: 'var(--foreground)',
+            }}
+          />
+        </div>
         <div className="flex-1 overflow-y-auto">
           {selected ? (
             <TerminalDetail
               terminal={selected}
+              position={selectedPosition}
+              alarm={selectedAlarm}
+              alarmCount={selectedAlarmCount}
               streams={mediaSessions.filter(s => s.terminalId === selected.terminalId)}
               onBack={() => setSelected(null)}
             />
           ) : (
-            <TerminalList terminals={terminals} onSelect={setSelected} />
+            <TerminalList terminals={filteredTerminals} onSelect={setSelected} />
           )}
         </div>
       </div>
@@ -166,7 +227,7 @@ function TerminalList({ terminals, onSelect }: { terminals: Terminal[]; onSelect
     return (
       <div className="px-4 py-6 text-center" style={{ color: 'var(--muted)' }}>
         <div className="text-2xl mb-2 opacity-30">◈</div>
-        <div className="font-mono text-[11px]">No terminals connected</div>
+        <div className="font-mono text-[11px]">No terminals match this filter</div>
       </div>
     )
   }
@@ -199,8 +260,11 @@ function TerminalList({ terminals, onSelect }: { terminals: Terminal[]; onSelect
   )
 }
 
-function TerminalDetail({ terminal: t, streams, onBack }: {
+function TerminalDetail({ terminal: t, position, alarm, alarmCount, streams, onBack }: {
   terminal: Terminal
+  position?: LatestPosition
+  alarm?: RecentAlarm
+  alarmCount: number
   streams: MediaSession[]
   onBack: () => void
 }) {
@@ -221,6 +285,10 @@ function TerminalDetail({ terminal: t, streams, onBack }: {
           ['Plate color', t.plateColorName],
           ['Manufacturer', t.manufacturerId || '—'],
           ['Connected', new Date(t.connectedAt).toLocaleString()],
+          ['GPS', position ? `${position.lat.toFixed(6)}, ${position.lon.toFixed(6)}` : '—'],
+          ['Speed', position ? `${position.speed.toFixed(1)} km/h` : '—'],
+          ['GPS time', position ? new Date(position.gpsTime).toLocaleString() : '—'],
+          ['Alarms', String(alarmCount)],
         ].map(([label, value]) => (
           <div key={label}>
             <div className="eyebrow text-[9px]">{label}</div>
@@ -228,6 +296,21 @@ function TerminalDetail({ terminal: t, streams, onBack }: {
           </div>
         ))}
       </div>
+
+      {alarm && (
+        <div className="surface-panel-quiet p-3 space-y-2">
+          <div className="eyebrow text-[9px]">Latest Alarm</div>
+          <div className="font-mono text-[11px]" style={{ color: 'var(--status-warn)' }}>
+            {alarm.alarmId}
+          </div>
+          <div className="font-mono text-[10px]" style={{ color: 'var(--muted)' }}>
+            Type {alarm.alarmType} · Level {alarm.alarmLevel} · {new Date(alarm.receivedAt).toLocaleString()}
+          </div>
+          <div className="font-mono text-[11px]" style={{ color: 'var(--foreground-strong)' }}>
+            {alarm.lat.toFixed(6)}, {alarm.lon.toFixed(6)} · {alarm.speed.toFixed(1)} km/h
+          </div>
+        </div>
+      )}
 
       {streams.length > 0 && (
         <div>
@@ -250,4 +333,23 @@ function TerminalDetail({ terminal: t, streams, onBack }: {
       )}
     </div>
   )
+}
+
+function popupHtml(
+  t: Terminal,
+  position?: LatestPosition,
+  alarm?: RecentAlarm,
+  alarmCount = 0,
+) {
+  const alarmLine = alarm
+    ? `<div style="color:var(--status-warn);margin-top:2px">Alarm ${alarm.alarmId} · ${new Date(alarm.receivedAt).toLocaleTimeString()}</div>`
+    : `<div style="color:var(--muted);margin-top:2px">No recent alarm</div>`
+  return `<div style="font-family:var(--ff-mono);font-size:11px;color:var(--foreground-strong);min-width:180px">
+    <div style="color:var(--electric);font-weight:500">${t.plateNumber || t.terminalId}</div>
+    <div style="color:var(--muted);margin-top:2px">${t.terminalId}</div>
+    <div style="color:var(--muted);margin-top:2px">${position ? `${position.lat.toFixed(6)}, ${position.lon.toFixed(6)}` : 'No live GPS yet'}</div>
+    <div style="color:var(--muted);margin-top:2px">${position ? `${position.speed.toFixed(1)} km/h · ${position.direction} deg` : ''}</div>
+    <div style="color:var(--muted);margin-top:2px">Alarms ${alarmCount}</div>
+    ${alarmLine}
+  </div>`
 }
