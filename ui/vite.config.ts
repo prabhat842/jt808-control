@@ -7,7 +7,7 @@ export default defineConfig({
   base: '/',
   build: {
     outDir: '../src/main/resources/static',
-    emptyOutDir: false, // preserve existing files we don't manage
+    emptyOutDir: true,
   },
   server: {
     port: 5173,

@@ -8,7 +8,14 @@ import AlarmsPage   from './pages/alarms/AlarmsPage'
 import MediaPage    from './pages/media/MediaPage'
 import ServicesPage from './pages/services/ServicesPage'
 
-const queryClient = new QueryClient()
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: false,           // don't retry on 503 — backend may be intentionally stopped
+      refetchOnWindowFocus: false,
+    },
+  },
+})
 
 export default function App() {
   return (

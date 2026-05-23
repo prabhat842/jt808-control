@@ -187,14 +187,16 @@ public class ControlApi {
                 .uri(URI.create(url))
                 .timeout(Duration.ofSeconds(2)).GET().build();
         return http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                .thenApply(resp -> ResponseEntity.ok()
+                .thenApply(resp -> ResponseEntity.status(resp.statusCode())
                         .contentType(MediaType.APPLICATION_JSON)
                         .body(resp.body()))
                 .exceptionally(ex -> {
+                    // Return 503 so React Query treats it as an error and data stays undefined,
+                    // falling back to the [] default — prevents .map() crash on error objects.
                     Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
                     String msg = cause.getMessage() != null
                             ? cause.getMessage() : cause.getClass().getSimpleName();
-                    return ResponseEntity.ok()
+                    return ResponseEntity.status(503)
                             .contentType(MediaType.APPLICATION_JSON)
                             .body("{\"error\":\"" + msg.replace("\"", "'") + "\"}");
                 });
