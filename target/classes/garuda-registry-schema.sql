@@ -164,6 +164,29 @@ CREATE INDEX IF NOT EXISTS idx_driver_vehicle_assignment_driver
 
 -- Parameter profile groups JT808 parameters so operators can apply a named
 -- policy to one or many devices.
+CREATE TABLE IF NOT EXISTS garuda_registry.terminal_parameter_catalog (
+    parameter_id      INTEGER PRIMARY KEY,
+    hex_id            VARCHAR(12) NOT NULL UNIQUE,
+    parameter_name    VARCHAR(160) NOT NULL,
+    short_description VARCHAR(500) NOT NULL,
+    long_description  VARCHAR(2000),
+    value_kind        VARCHAR(24) NOT NULL,
+    unit              VARCHAR(32),
+    min_value         VARCHAR(64),
+    max_value         VARCHAR(64),
+    default_value     VARCHAR(1000),
+    category          VARCHAR(48) NOT NULL,
+    business_impact   VARCHAR(1000),
+    alarm_related     BOOLEAN NOT NULL DEFAULT FALSE,
+    requires_restart  BOOLEAN NOT NULL DEFAULT FALSE,
+    table_ref         VARCHAR(80) NOT NULL DEFAULT 'JT808 Table 12',
+    CONSTRAINT ck_terminal_parameter_catalog_kind
+        CHECK (value_kind IN ('byte', 'word', 'dword', 'string', 'bytes', 'bytes8'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_terminal_parameter_catalog_category
+    ON garuda_registry.terminal_parameter_catalog(category);
+
 CREATE TABLE IF NOT EXISTS garuda_registry.terminal_parameter_profile (
     profile_id      VARCHAR(64) PRIMARY KEY,
     org_id          VARCHAR(64) NOT NULL,
@@ -294,4 +317,3 @@ CREATE TABLE IF NOT EXISTS garuda_registry.operator_account (
 
 CREATE INDEX IF NOT EXISTS idx_operator_account_org
     ON garuda_registry.operator_account(org_id);
-

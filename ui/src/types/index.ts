@@ -181,6 +181,24 @@ export interface ParameterItem {
   createdAt: string | null
 }
 
+export interface ParameterCatalogEntry {
+  parameterId: number
+  hexId: string
+  parameterName: string
+  shortDescription: string
+  longDescription: string | null
+  valueKind: string
+  unit: string | null
+  minValue: string | null
+  maxValue: string | null
+  defaultValue: string | null
+  category: string
+  businessImpact: string | null
+  alarmRelated: boolean
+  requiresRestart: boolean
+  tableRef: string
+}
+
 export interface ParameterPush {
   pushId: string
   deviceId: string

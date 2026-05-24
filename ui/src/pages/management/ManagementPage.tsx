@@ -16,6 +16,7 @@ import {
   useDriverProfiles,
   useOrgUnits,
   useParameterItems,
+  useParameterCatalog,
   useParameterPushes,
   useParameterProfiles,
   useRegistryDevices,
@@ -29,7 +30,7 @@ import {
   useUpdateRegistryDevice,
   useVehicleAssets,
 } from '../../api/hooks'
-import type { DriverProfile, OrgUnit, ParameterItem, ParameterProfile, RegistryDevice, VehicleAsset } from '../../types'
+import type { DriverProfile, OrgUnit, ParameterCatalogEntry, ParameterItem, ParameterProfile, RegistryDevice, VehicleAsset } from '../../types'
 
 type Section = 'devices' | 'organizations' | 'vehicles' | 'drivers' | 'parameters'
 type EditorKind = 'org' | 'device' | 'vehicle' | 'driver' | 'parameter'
@@ -777,6 +778,7 @@ function ParametersTable({
   const updateItem = useUpdateParameterItem()
   const deleteItem = useDeleteParameterItem()
   const applyProfile = useApplyParameterProfile()
+  const { data: catalog = [] } = useParameterCatalog()
   const { data: devices = [] } = useRegistryDevices()
   const { data: pushes = [], isLoading: isLoadingPushes } = useParameterPushes()
   const rows = filterRows(profiles, search, p => [
@@ -791,6 +793,10 @@ function ParametersTable({
   const profilePushes = effectiveProfileId
     ? pushes.filter(push => push.profileId === effectiveProfileId).slice(0, 8)
     : []
+  const catalogById = useMemo(() => new Map(catalog.map(entry => [entry.parameterId, entry])), [catalog])
+  const selectedCatalogEntry = itemDraft.parameterId
+    ? catalogById.get(parseParameterIdLoose(itemDraft.parameterId))
+    : null
 
   useEffect(() => {
     if (!selectedProfileId && profiles.length > 0) {
@@ -946,8 +952,27 @@ function ParametersTable({
           )}
 
           <div className="grid grid-cols-4 gap-3">
-            <Field label="Parameter ID">
-              <input value={itemDraft.parameterId} onChange={e => setItemDraft({ ...itemDraft, parameterId: e.target.value })} placeholder="0x00000029" />
+            <Field label="Parameter">
+              <select
+                value={itemDraft.parameterId ? String(parseParameterIdLoose(itemDraft.parameterId)) : ''}
+                onChange={e => {
+                  const parameterId = Number(e.target.value)
+                  const entry = catalogById.get(parameterId)
+                  setItemDraft({
+                    ...itemDraft,
+                    parameterId: entry?.hexId ?? formatParameterId(parameterId),
+                    valueKind: entry?.valueKind === 'bytes8' ? 'bytes' : entry?.valueKind ?? itemDraft.valueKind,
+                    valueText: entry?.defaultValue ?? itemDraft.valueText,
+                  })
+                }}
+              >
+                <option value="">Select parameter</option>
+                {catalog.map(entry => (
+                  <option key={entry.parameterId} value={entry.parameterId}>
+                    {entry.hexId} · {entry.parameterName}
+                  </option>
+                ))}
+              </select>
             </Field>
             <Field label="Value kind">
               <select value={itemDraft.valueKind} onChange={e => setItemDraft({ ...itemDraft, valueKind: e.target.value })}>
@@ -962,6 +987,7 @@ function ParametersTable({
               <input value={itemDraft.valueText} onChange={e => setItemDraft({ ...itemDraft, valueText: e.target.value })} placeholder="30" />
             </Field>
           </div>
+          {selectedCatalogEntry && <ParameterCatalogCard entry={selectedCatalogEntry} />}
           <div className="flex items-center justify-end gap-2">
             {itemDraft.itemId && (
               <button className="btn-secondary" onClick={() => setItemDraft(EMPTY_PARAMETER_ITEM)}>
@@ -976,12 +1002,16 @@ function ParametersTable({
           <RegistryTable
             loading={isLoadingItems}
             empty="No parameter items"
-            headers={['Parameter', 'Kind', 'Value', 'Created', 'Actions']}
+            headers={['Parameter', 'Name', 'Category', 'Value', 'Impact', 'Actions']}
             rows={items.map(item => [
               <Mono key="param" strong>{formatParameterId(item.parameterId)}</Mono>,
-              item.valueKind,
-              <Mono key="value">{item.valueText}</Mono>,
-              item.createdAt ?? '-',
+              <ParameterName key="name" entry={catalogById.get(item.parameterId)} fallback={item.valueKind} />,
+              catalogById.get(item.parameterId)?.category ?? '-',
+              <Mono key="value">{item.valueText}{catalogById.get(item.parameterId)?.unit ? ` ${catalogById.get(item.parameterId)?.unit}` : ''}</Mono>,
+              <div key="impact" className="flex items-center gap-2">
+                {catalogById.get(item.parameterId)?.alarmRelated && <StatusPill label="alarm" tone="warn" />}
+                {catalogById.get(item.parameterId)?.requiresRestart && <StatusPill label="restart" tone="muted" />}
+              </div>,
               <RowActions
                 key="actions"
                 onEdit={() => editItem(item)}
@@ -1088,6 +1118,47 @@ function RegistryTable({
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+function ParameterName({ entry, fallback }: { entry?: ParameterCatalogEntry; fallback: string }) {
+  if (!entry) return <Mono>{fallback}</Mono>
+  return (
+    <span className="parameter-name" title={`${entry.longDescription ?? entry.shortDescription}\n\nBusiness impact: ${entry.businessImpact ?? '-'}\nType: ${entry.valueKind}${entry.unit ? `, unit: ${entry.unit}` : ''}${entry.minValue || entry.maxValue ? `\nRange: ${entry.minValue ?? '-'} to ${entry.maxValue ?? '-'}` : ''}`}>
+      <span>{entry.parameterName}</span>
+      <small>{entry.shortDescription}</small>
+    </span>
+  )
+}
+
+function ParameterCatalogCard({ entry }: { entry: ParameterCatalogEntry }) {
+  return (
+    <div className="parameter-catalog-card">
+      <div className="parameter-catalog-main">
+        <div>
+          <div className="eyebrow text-[9px]">{entry.category}</div>
+          <div className="parameter-catalog-title">{entry.hexId} · {entry.parameterName}</div>
+        </div>
+        <div className="flex items-center gap-2">
+          {entry.alarmRelated && <StatusPill label="alarm logic" tone="warn" />}
+          {entry.requiresRestart && <StatusPill label="reconnect" tone="muted" />}
+        </div>
+      </div>
+      <div className="parameter-catalog-desc" title={entry.longDescription ?? entry.shortDescription}>
+        {entry.longDescription ?? entry.shortDescription}
+      </div>
+      <div className="parameter-catalog-grid">
+        <span>Kind <strong>{entry.valueKind}</strong></span>
+        <span>Unit <strong>{entry.unit ?? '-'}</strong></span>
+        <span>Range <strong>{entry.minValue ?? '-'} to {entry.maxValue ?? '-'}</strong></span>
+        <span>Default <strong>{entry.defaultValue ?? '-'}</strong></span>
+      </div>
+      {entry.businessImpact && (
+        <div className="parameter-impact" title={entry.businessImpact}>
+          {entry.businessImpact}
+        </div>
+      )}
     </div>
   )
 }
@@ -1720,6 +1791,14 @@ function parseParameterId(value: string): number {
   const parsed = trimmed.startsWith('0x') ? Number.parseInt(trimmed.slice(2), 16) : Number.parseInt(trimmed, 10)
   if (!Number.isFinite(parsed) || Number.isNaN(parsed) || parsed < 0) throw new Error('parameter ID must be a non-negative number')
   return parsed
+}
+
+function parseParameterIdLoose(value: string): number {
+  try {
+    return parseParameterId(value)
+  } catch {
+    return -1
+  }
 }
 
 function formatParameterId(value: number): string {

@@ -16,6 +16,7 @@ import type {
   DriverProfile,
   ParameterProfile,
   ParameterItem,
+  ParameterCatalogEntry,
   ParameterPush,
 } from '../types'
 
@@ -411,6 +412,13 @@ export function useParameterItems(profileId: string | null) {
     queryKey: ['registry-parameter-items', profileId],
     queryFn: () => client.get(`/registry/parameter-profiles/${encodeURIComponent(profileId ?? '')}/items`).then(r => r.data),
     enabled: !!profileId,
+  })
+}
+
+export function useParameterCatalog() {
+  return useQuery<ParameterCatalogEntry[]>({
+    queryKey: ['registry-parameter-catalog'],
+    queryFn: () => client.get('/registry/parameter-catalog').then(r => r.data),
   })
 }
 

@@ -248,6 +248,46 @@ public class RegistryApi {
         ));
     }
 
+    @GetMapping("/parameter-catalog")
+    public Object parameterCatalog() {
+        return jdbc.query("""
+                SELECT
+                    parameter_id      AS parameter_id,
+                    hex_id            AS hex_id,
+                    parameter_name    AS parameter_name,
+                    short_description AS short_description,
+                    long_description  AS long_description,
+                    value_kind        AS value_kind,
+                    unit              AS unit,
+                    min_value         AS min_value,
+                    max_value         AS max_value,
+                    default_value     AS default_value,
+                    category          AS category,
+                    business_impact   AS business_impact,
+                    alarm_related     AS alarm_related,
+                    requires_restart  AS requires_restart,
+                    table_ref         AS table_ref
+                FROM garuda_registry.terminal_parameter_catalog
+                ORDER BY parameter_id
+                """, (rs, i) -> row(
+                "parameterId", rs.getInt("parameter_id"),
+                "hexId", rs.getString("hex_id"),
+                "parameterName", rs.getString("parameter_name"),
+                "shortDescription", rs.getString("short_description"),
+                "longDescription", rs.getString("long_description"),
+                "valueKind", rs.getString("value_kind"),
+                "unit", rs.getString("unit"),
+                "minValue", rs.getString("min_value"),
+                "maxValue", rs.getString("max_value"),
+                "defaultValue", rs.getString("default_value"),
+                "category", rs.getString("category"),
+                "businessImpact", rs.getString("business_impact"),
+                "alarmRelated", rs.getBoolean("alarm_related"),
+                "requiresRestart", rs.getBoolean("requires_restart"),
+                "tableRef", rs.getString("table_ref")
+        ));
+    }
+
     @GetMapping("/parameter-profiles/{profileId}/items")
     public Object parameterItems(@PathVariable String profileId) {
         if (!exists("SELECT COUNT(*) FROM garuda_registry.terminal_parameter_profile WHERE profile_id = ?", profileId)) {
