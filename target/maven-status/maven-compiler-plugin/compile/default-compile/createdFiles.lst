@@ -6,6 +6,7 @@ com/example/control/service/ProcessOrchestrator$ServiceConfig.class
 com/example/control/api/UiProperties.class
 com/example/control/api/RegistryApi$ParameterItemPayload.class
 com/example/control/service/ManagedProcess.class
+com/example/control/api/RegistryApi$ParameterPushPayload.class
 com/example/control/api/RegistryApi.class
 com/example/control/api/RegistryApi$DevicePayload.class
 com/example/control/service/ProcessOrchestrator.class

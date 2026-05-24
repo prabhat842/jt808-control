@@ -16,6 +16,7 @@ import type {
   DriverProfile,
   ParameterProfile,
   ParameterItem,
+  ParameterPush,
 } from '../types'
 
 // ── Services ──────────────────────────────────────────────────────────────
@@ -451,6 +452,31 @@ export function useDeleteParameterItem() {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ['registry-parameter-items', variables.profileId] }),
         qc.invalidateQueries({ queryKey: ['registry-parameter-profiles'] }),
+      ])
+    },
+  })
+}
+
+export function useParameterPushes() {
+  return useQuery<ParameterPush[]>({
+    queryKey: ['registry-parameter-pushes'],
+    queryFn: () => client.get('/registry/parameter-pushes').then(r => r.data),
+    refetchInterval: 10000,
+  })
+}
+
+export function useApplyParameterProfile() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ profileId, deviceId }: { profileId: string; deviceId: string }) =>
+      client.post(`/registry/parameter-profiles/${encodeURIComponent(profileId)}/pushes`, {
+        deviceId,
+        requestedBy: 'Garuda UI',
+      }).then(r => r.data),
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['registry-parameter-pushes'] }),
+        qc.invalidateQueries({ queryKey: ['registry-devices'] }),
       ])
     },
   })

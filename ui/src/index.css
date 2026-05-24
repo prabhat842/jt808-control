@@ -1110,6 +1110,36 @@ body {
   cursor: pointer;
 }
 
+.parameter-apply-panel {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 360px) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: rgba(15,24,33,0.74);
+}
+
+.parameter-apply-panel select {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: 0;
+  background: var(--surface-1);
+  color: var(--foreground);
+  font-family: var(--ff-mono);
+  font-size: 11px;
+}
+
+.parameter-apply-panel .btn-primary {
+  height: 36px;
+  white-space: nowrap;
+}
+
 @media (max-width: 980px) {
   .garuda-shell {
     grid-template-columns: 72px minmax(0, 1fr);
@@ -1173,5 +1203,8 @@ body {
     max-height: 280px;
     border-left: 0;
     border-top: 1px solid var(--border);
+  }
+  .parameter-apply-panel {
+    grid-template-columns: 1fr;
   }
 }

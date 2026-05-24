@@ -3,6 +3,7 @@ import {
   useCreateDriverProfile,
   useCreateParameterItem,
   useCreateParameterProfile,
+  useApplyParameterProfile,
   useCreateVehicleAsset,
   useCreateOrgUnit,
   useCreateRegistryDevice,
@@ -15,6 +16,7 @@ import {
   useDriverProfiles,
   useOrgUnits,
   useParameterItems,
+  useParameterPushes,
   useParameterProfiles,
   useRegistryDevices,
   useRegistrySummary,
@@ -769,15 +771,26 @@ function ParametersTable({
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null)
   const [itemDraft, setItemDraft] = useState<ParameterItemDraft>(EMPTY_PARAMETER_ITEM)
   const [itemError, setItemError] = useState<string | null>(null)
+  const [targetDeviceId, setTargetDeviceId] = useState('')
+  const [pushError, setPushError] = useState<string | null>(null)
   const createItem = useCreateParameterItem()
   const updateItem = useUpdateParameterItem()
   const deleteItem = useDeleteParameterItem()
+  const applyProfile = useApplyParameterProfile()
+  const { data: devices = [] } = useRegistryDevices()
+  const { data: pushes = [], isLoading: isLoadingPushes } = useParameterPushes()
   const rows = filterRows(profiles, search, p => [
     p.profileName, p.orgName, p.profileStatus, p.description,
   ])
   const selectedProfile = profiles.find(p => p.profileId === selectedProfileId) ?? profiles[0] ?? null
   const effectiveProfileId = selectedProfile?.profileId ?? null
   const { data: items = [], isLoading: isLoadingItems } = useParameterItems(effectiveProfileId)
+  const matchingDevices = selectedProfile
+    ? devices.filter(device => device.orgId === selectedProfile.orgId)
+    : devices
+  const profilePushes = effectiveProfileId
+    ? pushes.filter(push => push.profileId === effectiveProfileId).slice(0, 8)
+    : []
 
   useEffect(() => {
     if (!selectedProfileId && profiles.length > 0) {
@@ -828,6 +841,17 @@ function ParametersTable({
       if (itemDraft.itemId === item.itemId) setItemDraft(EMPTY_PARAMETER_ITEM)
     } catch (err) {
       setItemError(readError(err))
+    }
+  }
+
+  async function applySelectedProfile() {
+    if (!effectiveProfileId) return
+    try {
+      setPushError(null)
+      if (!targetDeviceId) throw new Error('select a target device')
+      await applyProfile.mutateAsync({ profileId: effectiveProfileId, deviceId: targetDeviceId })
+    } catch (err) {
+      setPushError(readError(err))
     }
   }
 
@@ -889,6 +913,32 @@ function ParametersTable({
             </button>
           </div>
 
+          <div className="parameter-apply-panel">
+            <div>
+              <div className="eyebrow text-[9px] mb-1">Apply Profile</div>
+              <div className="font-mono text-[11px]" style={{ color: 'var(--muted-strong)' }}>
+                Queue this parameter profile against a registered terminal device.
+              </div>
+            </div>
+            <select value={targetDeviceId} onChange={e => setTargetDeviceId(e.target.value)}>
+              <option value="">Select device</option>
+              {matchingDevices.map(device => (
+                <option key={device.deviceId} value={device.deviceId}>
+                  {device.terminalId}{device.plateNumber ? ` · ${device.plateNumber}` : ''} · {device.orgName}
+                </option>
+              ))}
+            </select>
+            <button className="btn-primary" onClick={() => void applySelectedProfile()} disabled={applyProfile.isPending}>
+              Queue push
+            </button>
+          </div>
+
+          {pushError && (
+            <div className="surface-panel-quiet px-4 py-3 font-mono text-[12px]" style={{ color: 'var(--status-warn)' }}>
+              {pushError}
+            </div>
+          )}
+
           {itemError && (
             <div className="surface-panel-quiet px-4 py-3 font-mono text-[12px]" style={{ color: 'var(--status-warn)' }}>
               {itemError}
@@ -940,6 +990,22 @@ function ParametersTable({
               />,
             ])}
           />
+
+          <div>
+            <div className="eyebrow text-[9px] mb-2">Push Audit</div>
+            <RegistryTable
+              loading={isLoadingPushes}
+              empty="No profile push history"
+              headers={['Target', 'Status', 'Requested', 'Requested by', 'Result']}
+              rows={profilePushes.map(push => [
+                <Mono key="target" strong>{push.plateNumber ?? push.terminalId}</Mono>,
+                <StatusPill key="status" label={push.pushStatus} tone={push.pushStatus === 'acked' || push.pushStatus === 'sent' || push.pushStatus === 'queued' ? 'ok' : 'warn'} />,
+                push.requestedAt ? new Date(push.requestedAt).toLocaleString() : '-',
+                push.requestedBy ?? '-',
+                push.resultMessage ?? '-',
+              ])}
+            />
+          </div>
         </div>
       )}
     </div>

@@ -180,3 +180,18 @@ export interface ParameterItem {
   valueText: string
   createdAt: string | null
 }
+
+export interface ParameterPush {
+  pushId: string
+  deviceId: string
+  terminalId: string
+  plateNumber: string | null
+  profileId: string
+  profileName: string
+  commandId: number | null
+  pushStatus: string
+  requestedBy: string | null
+  requestedAt: string | null
+  completedAt: string | null
+  resultMessage: string | null
+}

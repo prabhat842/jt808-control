@@ -274,6 +274,46 @@ public class RegistryApi {
         ), profileId);
     }
 
+    @GetMapping("/parameter-pushes")
+    public Object parameterPushes() {
+        return jdbc.query("""
+                SELECT
+                    p.push_id        AS push_id,
+                    p.device_id      AS device_id,
+                    d.terminal_id    AS terminal_id,
+                    v.plate_number   AS plate_number,
+                    p.profile_id     AS profile_id,
+                    f.profile_name   AS profile_name,
+                    p.command_id     AS command_id,
+                    p.push_status    AS push_status,
+                    p.requested_by   AS requested_by,
+                    p.requested_at   AS requested_at,
+                    p.completed_at   AS completed_at,
+                    p.result_message AS result_message
+                FROM garuda_registry.device_parameter_push p
+                JOIN garuda_registry.terminal_device d
+                    ON d.device_id = p.device_id
+                JOIN garuda_registry.terminal_parameter_profile f
+                    ON f.profile_id = p.profile_id
+                LEFT JOIN garuda_registry.vehicle_asset v
+                    ON v.device_id = d.device_id
+                ORDER BY p.requested_at DESC
+                """, (rs, i) -> row(
+                "pushId", rs.getString("push_id"),
+                "deviceId", rs.getString("device_id"),
+                "terminalId", rs.getString("terminal_id"),
+                "plateNumber", rs.getString("plate_number"),
+                "profileId", rs.getString("profile_id"),
+                "profileName", rs.getString("profile_name"),
+                "commandId", nullableLong(rs, "command_id"),
+                "pushStatus", rs.getString("push_status"),
+                "requestedBy", rs.getString("requested_by"),
+                "requestedAt", nullableTimestamp(rs, "requested_at"),
+                "completedAt", nullableTimestamp(rs, "completed_at"),
+                "resultMessage", rs.getString("result_message")
+        ));
+    }
+
     @PostMapping("/org-units")
     public ResponseEntity<Map<String, Object>> createOrgUnit(@RequestBody OrgUnitPayload payload) {
         String orgId = blankToNull(payload.orgId()) != null ? payload.orgId() : generateOrgId(payload.orgCode());
@@ -702,6 +742,38 @@ public class RegistryApi {
         return ok(Map.of("result", "deleted", "itemId", itemId));
     }
 
+    @PostMapping("/parameter-profiles/{profileId}/pushes")
+    public ResponseEntity<Map<String, Object>> createParameterPush(
+            @PathVariable String profileId,
+            @RequestBody ParameterPushPayload payload) {
+        if (payload == null || payload.deviceId() == null || payload.deviceId().isBlank()) {
+            throw new IllegalArgumentException("deviceId is required");
+        }
+        if (!exists("SELECT COUNT(*) FROM garuda_registry.terminal_parameter_profile WHERE profile_id = ?", profileId)) {
+            return notFound("parameter profile not found: " + profileId);
+        }
+        if (!exists("SELECT COUNT(*) FROM garuda_registry.terminal_device WHERE device_id = ?", payload.deviceId())) {
+            return notFound("device not found: " + payload.deviceId());
+        }
+        if (!exists("SELECT COUNT(*) FROM garuda_registry.terminal_parameter_item WHERE profile_id = ?", profileId)) {
+            return conflict("parameter profile has no items to push");
+        }
+        String pushId = "push-" + java.util.UUID.randomUUID().toString().substring(0, 8);
+        String requestedBy = defaultIfBlank(payload.requestedBy(), "Garuda");
+        jdbc.update("""
+                INSERT INTO garuda_registry.device_parameter_push
+                    (push_id, device_id, profile_id, push_status, requested_by, result_message)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                pushId,
+                payload.deviceId().trim(),
+                profileId,
+                "queued",
+                requestedBy,
+                "Profile queued for JT808 parameter push");
+        return ok(Map.of("result", "queued", "pushId", pushId));
+    }
+
     private int count(String table) {
         Integer value = jdbc.queryForObject("SELECT COUNT(*) FROM " + table, Integer.class);
         return value == null ? 0 : value;
@@ -850,6 +922,11 @@ public class RegistryApi {
         return rs.wasNull() ? null : value;
     }
 
+    private static Long nullableLong(ResultSet rs, String column) throws SQLException {
+        long value = rs.getLong(column);
+        return rs.wasNull() ? null : value;
+    }
+
     public record OrgUnitPayload(
             String orgId,
             String parentOrgId,
@@ -912,4 +989,8 @@ public class RegistryApi {
             Integer parameterId,
             String valueKind,
             String valueText) {}
+
+    public record ParameterPushPayload(
+            String deviceId,
+            String requestedBy) {}
 }
