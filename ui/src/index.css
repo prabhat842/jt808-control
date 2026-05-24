@@ -1006,6 +1006,110 @@ body {
   padding: 48px 12px;
 }
 
+/* ── Management master/detail ─────────────────────────────────────────── */
+.management-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 0;
+  height: 100%;
+  min-height: 0;
+  background: var(--background);
+}
+
+.management-main {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px;
+}
+
+.management-inspector {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--border);
+  background: rgba(9,17,23,0.97);
+}
+
+.management-inspector-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.management-inspector-head .btn-secondary {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+.management-inspector-title {
+  margin-top: 4px;
+  color: var(--foreground-strong);
+  font-family: var(--ff-display);
+  font-size: 16px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.management-inspector-sub {
+  margin-top: 3px;
+  color: var(--muted);
+  font-family: var(--ff-mono);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.management-inspector-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 16px;
+}
+
+.management-inspector-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(159,182,199,0.08);
+}
+
+.management-inspector-row span {
+  color: var(--muted);
+  font-family: var(--ff-mono);
+  font-size: 10px;
+}
+
+.management-inspector-row strong {
+  color: var(--foreground-strong);
+  font-family: var(--ff-mono);
+  font-size: 10px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.management-inspector-empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  color: var(--muted);
+  font-family: var(--ff-mono);
+  font-size: 11px;
+  text-align: center;
+}
+
+.registry-row-clickable {
+  cursor: pointer;
+}
+
 @media (max-width: 980px) {
   .garuda-shell {
     grid-template-columns: 72px minmax(0, 1fr);
@@ -1057,5 +1161,17 @@ body {
   }
   .monitor-video-wall {
     grid-template-columns: 1fr;
+  }
+  .management-page {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .management-main {
+    padding: 16px;
+  }
+  .management-inspector {
+    max-height: 280px;
+    border-left: 0;
+    border-top: 1px solid var(--border);
   }
 }

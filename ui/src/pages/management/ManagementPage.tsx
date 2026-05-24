@@ -31,6 +31,12 @@ import type { DriverProfile, OrgUnit, ParameterItem, ParameterProfile, RegistryD
 
 type Section = 'devices' | 'organizations' | 'vehicles' | 'drivers' | 'parameters'
 type EditorKind = 'org' | 'device' | 'vehicle' | 'driver' | 'parameter'
+type InspectorState =
+  | { kind: 'device'; record: RegistryDevice }
+  | { kind: 'org'; record: OrgUnit }
+  | { kind: 'vehicle'; record: VehicleAsset }
+  | { kind: 'driver'; record: DriverProfile }
+  | { kind: 'parameter'; record: ParameterProfile }
 
 type EditorState =
   | { kind: 'org'; mode: 'create'; org?: OrgUnit }
@@ -184,6 +190,7 @@ export default function ManagementPage() {
   const [section, setSection] = useState<Section>('devices')
   const [search, setSearch] = useState('')
   const [editor, setEditor] = useState<EditorState | null>(null)
+  const [inspector, setInspector] = useState<InspectorState | null>(null)
   const [draft, setDraft] = useState<OrgDraft | DeviceDraft | VehicleDraft | DriverDraft | ParameterDraft>(EMPTY_ORG)
   const [error, setError] = useState<string | null>(null)
 
@@ -403,7 +410,8 @@ export default function ManagementPage() {
   }
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="management-page">
+      <section className="management-main">
       <div className="flex items-center justify-between gap-4">
         <div>
           <div className="eyebrow text-[9px] mb-1">Garuda Registry</div>
@@ -479,6 +487,7 @@ export default function ManagementPage() {
           <DevicesTable
             search={search}
             onCreate={() => setEditor({ kind: 'device', mode: 'create' })}
+            onInspect={device => setInspector({ kind: 'device', record: device })}
             onEdit={device => setEditor({ kind: 'device', mode: 'edit', device })}
             onDelete={deviceId => void removeEditor('device', deviceId)}
           />
@@ -488,6 +497,7 @@ export default function ManagementPage() {
           <OrganizationsTable
             search={search}
             onCreate={() => setEditor({ kind: 'org', mode: 'create' })}
+            onInspect={org => setInspector({ kind: 'org', record: org })}
             onEdit={org => setEditor({ kind: 'org', mode: 'edit', org })}
             onDelete={orgId => void removeEditor('org', orgId)}
           />
@@ -497,6 +507,7 @@ export default function ManagementPage() {
           <VehiclesTable
             search={search}
             onCreate={() => setEditor({ kind: 'vehicle', mode: 'create' })}
+            onInspect={vehicle => setInspector({ kind: 'vehicle', record: vehicle })}
             onEdit={vehicle => setEditor({ kind: 'vehicle', mode: 'edit', vehicle })}
             onDelete={vehicleId => void removeEditor('vehicle', vehicleId)}
           />
@@ -505,6 +516,7 @@ export default function ManagementPage() {
           <DriversTable
             search={search}
             onCreate={() => setEditor({ kind: 'driver', mode: 'create' })}
+            onInspect={driver => setInspector({ kind: 'driver', record: driver })}
             onEdit={driver => setEditor({ kind: 'driver', mode: 'edit', driver })}
             onDelete={driverId => void removeEditor('driver', driverId)}
           />
@@ -513,6 +525,7 @@ export default function ManagementPage() {
           <ParametersTable
             search={search}
             onCreate={() => setEditor({ kind: 'parameter', mode: 'create' })}
+            onInspect={profile => setInspector({ kind: 'parameter', record: profile })}
             onEdit={profile => setEditor({ kind: 'parameter', mode: 'edit', profile })}
             onDelete={profileId => void removeEditor('parameter', profileId)}
           />
@@ -542,6 +555,14 @@ export default function ManagementPage() {
           onChange={setDraft}
         />
       )}
+      </section>
+      <ManagementInspector inspector={inspector} onEdit={record => {
+        if (record.kind === 'device') setEditor({ kind: 'device', mode: 'edit', device: record.record })
+        else if (record.kind === 'org') setEditor({ kind: 'org', mode: 'edit', org: record.record })
+        else if (record.kind === 'vehicle') setEditor({ kind: 'vehicle', mode: 'edit', vehicle: record.record })
+        else if (record.kind === 'driver') setEditor({ kind: 'driver', mode: 'edit', driver: record.record })
+        else setEditor({ kind: 'parameter', mode: 'edit', profile: record.record })
+      }} />
     </div>
   )
 }
@@ -549,11 +570,13 @@ export default function ManagementPage() {
 function DevicesTable({
   search,
   onCreate,
+  onInspect,
   onEdit,
   onDelete,
 }: {
   search: string
   onCreate: () => void
+  onInspect: (device: RegistryDevice) => void
   onEdit: (device: RegistryDevice) => void
   onDelete: (deviceId: string) => void
 }) {
@@ -585,6 +608,7 @@ function DevicesTable({
           canDelete={d.channelCount === 0 && d.plateNumber == null}
         />,
       ])}
+      onRowClick={rows.map(d => () => onInspect(d))}
       onCreate={onCreate}
       createLabel="Add device"
     />
@@ -594,11 +618,13 @@ function DevicesTable({
 function OrganizationsTable({
   search,
   onCreate,
+  onInspect,
   onEdit,
   onDelete,
 }: {
   search: string
   onCreate: () => void
+  onInspect: (org: OrgUnit) => void
   onEdit: (org: OrgUnit) => void
   onDelete: (orgId: string) => void
 }) {
@@ -628,6 +654,7 @@ function OrganizationsTable({
           canDelete={o.deviceCount === 0 && o.vehicleCount === 0 && o.parentOrgId == null}
         />,
       ])}
+      onRowClick={rows.map(o => () => onInspect(o))}
       onCreate={onCreate}
       createLabel="Add organization"
     />
@@ -637,11 +664,13 @@ function OrganizationsTable({
 function VehiclesTable({
   search,
   onCreate,
+  onInspect,
   onEdit,
   onDelete,
 }: {
   search: string
   onCreate: () => void
+  onInspect: (vehicle: VehicleAsset) => void
   onEdit: (vehicle: VehicleAsset) => void
   onDelete: (vehicleId: string) => void
 }) {
@@ -670,6 +699,7 @@ function VehiclesTable({
           canDelete={v.currentDriverId == null}
         />,
       ])}
+      onRowClick={rows.map(v => () => onInspect(v))}
       onCreate={onCreate}
       createLabel="Add vehicle"
     />
@@ -679,11 +709,13 @@ function VehiclesTable({
 function DriversTable({
   search,
   onCreate,
+  onInspect,
   onEdit,
   onDelete,
 }: {
   search: string
   onCreate: () => void
+  onInspect: (driver: DriverProfile) => void
   onEdit: (driver: DriverProfile) => void
   onDelete: (driverId: string) => void
 }) {
@@ -713,6 +745,7 @@ function DriversTable({
           canDelete={d.currentVehiclePlate == null}
         />,
       ])}
+      onRowClick={rows.map(d => () => onInspect(d))}
       onCreate={onCreate}
       createLabel="Add driver"
     />
@@ -722,11 +755,13 @@ function DriversTable({
 function ParametersTable({
   search,
   onCreate,
+  onInspect,
   onEdit,
   onDelete,
 }: {
   search: string
   onCreate: () => void
+  onInspect: (profile: ParameterProfile) => void
   onEdit: (profile: ParameterProfile) => void
   onDelete: (profileId: string) => void
 }) {
@@ -807,7 +842,11 @@ function ParametersTable({
             key="profile"
             className="font-mono text-[11px]"
             style={{ color: effectiveProfileId === p.profileId ? 'var(--electric)' : 'var(--muted-strong)', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
-            onClick={() => setSelectedProfileId(p.profileId)}
+            onClick={event => {
+              event.stopPropagation()
+              setSelectedProfileId(p.profileId)
+              onInspect(p)
+            }}
           >
             {p.profileName}
           </button>,
@@ -816,7 +855,11 @@ function ParametersTable({
           p.description ?? '-',
           <StatusPill key="status" label={p.profileStatus} tone={p.profileStatus === 'active' ? 'ok' : 'muted'} />,
           <div key="actions" className="flex items-center gap-2">
-            <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '11px' }} onClick={() => setSelectedProfileId(p.profileId)}>
+            <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '11px' }} onClick={event => {
+              event.stopPropagation()
+              setSelectedProfileId(p.profileId)
+              onInspect(p)
+            }}>
               Items
             </button>
             <RowActions
@@ -826,6 +869,10 @@ function ParametersTable({
             />
           </div>,
         ])}
+        onRowClick={rows.map(p => () => {
+          setSelectedProfileId(p.profileId)
+          onInspect(p)
+        })}
         onCreate={onCreate}
         createLabel="Add profile"
       />
@@ -904,6 +951,7 @@ function RegistryTable({
   empty,
   headers,
   rows,
+  onRowClick,
   onCreate,
   createLabel,
 }: {
@@ -911,6 +959,7 @@ function RegistryTable({
   empty: string
   headers: string[]
   rows: React.ReactNode[][]
+  onRowClick?: (() => void)[]
   onCreate?: () => void
   createLabel?: string
 }) {
@@ -959,6 +1008,8 @@ function RegistryTable({
             <tr
               key={i}
               style={{ borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : 'none' }}
+              className={onRowClick?.[i] ? 'registry-row-clickable' : ''}
+              onClick={onRowClick?.[i]}
               onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-1)')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             >
@@ -1400,7 +1451,7 @@ function RowActions({
   canDelete: boolean
 }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2" onClick={event => event.stopPropagation()}>
       <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '11px' }} onClick={onEdit}>
         ✎ Edit
       </button>
@@ -1417,6 +1468,111 @@ function RowActions({
         ⌫ Delete
       </button>
     </div>
+  )
+}
+
+function ManagementInspector({
+  inspector,
+  onEdit,
+}: {
+  inspector: InspectorState | null
+  onEdit: (inspector: InspectorState) => void
+}) {
+  if (!inspector) {
+    return (
+      <aside className="management-inspector">
+        <div className="management-inspector-empty">
+          <div className="eyebrow text-[9px]">Registry Inspector</div>
+          <div>Select a row to inspect registry context.</div>
+        </div>
+      </aside>
+    )
+  }
+
+  const title = inspector.kind === 'device'
+    ? inspector.record.terminalId
+    : inspector.kind === 'org'
+      ? inspector.record.orgName
+      : inspector.kind === 'vehicle'
+        ? inspector.record.plateNumber
+        : inspector.kind === 'driver'
+          ? inspector.record.displayName
+          : inspector.record.profileName
+  const subtitle = inspector.kind === 'device'
+    ? inspector.record.orgName
+    : inspector.kind === 'org'
+      ? inspector.record.orgCode
+      : inspector.kind === 'vehicle'
+        ? inspector.record.orgName
+        : inspector.kind === 'driver'
+          ? inspector.record.orgName
+          : inspector.record.orgName
+  const rows = inspector.kind === 'device'
+    ? [
+        ['SIM', inspector.record.sim],
+        ['Protocol', `${inspector.record.protocolFamily} / ${inspector.record.protocolVersion}`],
+        ['Model', inspector.record.deviceModel ?? '-'],
+        ['Manufacturer', inspector.record.manufacturerId ?? '-'],
+        ['Firmware', inspector.record.firmwareVersion ?? '-'],
+        ['Lifecycle', inspector.record.lifecycleStatus],
+        ['Channels', String(inspector.record.channelCount)],
+      ]
+    : inspector.kind === 'org'
+      ? [
+          ['Type', inspector.record.orgKind],
+          ['Parent', inspector.record.parentOrgName ?? '-'],
+          ['Devices', String(inspector.record.deviceCount)],
+          ['Vehicles', String(inspector.record.vehicleCount)],
+          ['Contact', inspector.record.contactName ?? '-'],
+          ['Phone', inspector.record.contactPhone ?? '-'],
+          ['Status', inspector.record.status],
+        ]
+      : inspector.kind === 'vehicle'
+        ? [
+            ['Terminal', inspector.record.terminalId ?? '-'],
+            ['VIN', inspector.record.vin ?? '-'],
+            ['Kind', inspector.record.vehicleKind],
+            ['Fuel', inspector.record.fuelKind ?? '-'],
+            ['Capacity', inspector.record.capacityTons == null ? '-' : `${inspector.record.capacityTons} t`],
+            ['Driver', inspector.record.currentDriverName ?? '-'],
+            ['Status', inspector.record.operationStatus],
+          ]
+        : inspector.kind === 'driver'
+          ? [
+              ['Phone', inspector.record.phone ?? '-'],
+              ['License', inspector.record.licenseNumber ?? '-'],
+              ['License class', inspector.record.licenseClass ?? '-'],
+              ['License expiry', inspector.record.licenseExpiresOn ?? '-'],
+              ['Qualification', inspector.record.qualificationNumber ?? '-'],
+              ['Vehicle', inspector.record.currentVehiclePlate ?? '-'],
+              ['Risk', inspector.record.riskLabel],
+            ]
+          : [
+              ['Profile ID', inspector.record.profileId],
+              ['Description', inspector.record.description ?? '-'],
+              ['Items', String(inspector.record.itemCount)],
+              ['Status', inspector.record.profileStatus],
+            ]
+
+  return (
+    <aside className="management-inspector">
+      <div className="management-inspector-head">
+        <div>
+          <div className="eyebrow text-[9px]">Registry Inspector</div>
+          <div className="management-inspector-title">{title}</div>
+          <div className="management-inspector-sub">{subtitle}</div>
+        </div>
+        <button className="btn-secondary" onClick={() => onEdit(inspector)}>Edit</button>
+      </div>
+      <div className="management-inspector-body">
+        {rows.map(([label, value]) => (
+          <div key={label} className="management-inspector-row">
+            <span>{label}</span>
+            <strong>{value}</strong>
+          </div>
+        ))}
+      </div>
+    </aside>
   )
 }
 
