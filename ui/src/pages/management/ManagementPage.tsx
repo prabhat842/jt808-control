@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Eye, PencilLine, Trash2 } from 'lucide-react'
 import {
   useCreateDriverProfile,
   useCreateParameterItem,
@@ -14,6 +15,7 @@ import {
   useDeleteOrgUnit,
   useDeleteRegistryDevice,
   useDriverProfiles,
+  useEffectiveParameters,
   useOrgUnits,
   useParameterItems,
   useParameterCatalog,
@@ -30,12 +32,13 @@ import {
   useUpdateRegistryDevice,
   useVehicleAssets,
 } from '../../api/hooks'
-import type { DriverProfile, OrgUnit, ParameterCatalogEntry, ParameterItem, ParameterProfile, RegistryDevice, VehicleAsset } from '../../types'
+import type { DriverProfile, EffectiveParameter, OrgUnit, ParameterCatalogEntry, ParameterItem, ParameterProfile, RegistryDevice, Terminal, VehicleAsset } from '../../types'
 
-type Section = 'devices' | 'organizations' | 'vehicles' | 'drivers' | 'parameters'
+type Section = 'devices' | 'organizations' | 'vehicles' | 'drivers'
 type EditorKind = 'org' | 'device' | 'vehicle' | 'driver' | 'parameter'
 type InspectorState =
   | { kind: 'device'; record: RegistryDevice }
+  | { kind: 'terminal'; record: Terminal }
   | { kind: 'org'; record: OrgUnit }
   | { kind: 'vehicle'; record: VehicleAsset }
   | { kind: 'driver'; record: DriverProfile }
@@ -105,6 +108,8 @@ type DriverDraft = {
 
 type ParameterDraft = {
   orgId: string
+  deviceId: string
+  profileScope: 'global' | 'org' | 'terminal'
   profileName: string
   description: string
   profileStatus: string
@@ -122,7 +127,6 @@ const SECTIONS: { id: Section; label: string }[] = [
   { id: 'organizations', label: 'Organizations' },
   { id: 'vehicles', label: 'Vehicles' },
   { id: 'drivers', label: 'Drivers' },
-  { id: 'parameters', label: 'Parameters' },
 ]
 
 const EMPTY_ORG: OrgDraft = {
@@ -177,6 +181,8 @@ const EMPTY_DRIVER: DriverDraft = {
 
 const EMPTY_PARAMETER: ParameterDraft = {
   orgId: '',
+  deviceId: '',
+  profileScope: 'org',
   profileName: '',
   description: '',
   profileStatus: 'draft',
@@ -188,6 +194,19 @@ const EMPTY_PARAMETER_ITEM: ParameterItemDraft = {
   valueKind: 'dword',
   valueText: '',
 }
+
+const PARAMETER_CATALOG_ORDER = [
+  'Connectivity',
+  'Network',
+  'Reporting',
+  'Alarm',
+  'Speed & Safety',
+  'Media',
+  'Vehicle',
+  'GNSS',
+  'CAN',
+  'Custom',
+] as const
 
 export default function ManagementPage() {
   const [section, setSection] = useState<Section>('devices')
@@ -280,6 +299,8 @@ export default function ManagementPage() {
       const profile = editor.mode === 'edit' ? editor.profile : editor.profile
       setDraft(profile ? {
         orgId: profile.orgId ?? '',
+        deviceId: profile.deviceId ?? '',
+        profileScope: profile.profileScope ?? 'org',
         profileName: profile.profileName ?? '',
         description: profile.description ?? '',
         profileStatus: profile.profileStatus ?? 'draft',
@@ -292,7 +313,6 @@ export default function ManagementPage() {
     organizations: 'Organizations',
     vehicles: 'Vehicles',
     drivers: 'Drivers',
-    parameters: 'Parameters',
   }[section]
 
   async function saveEditor() {
@@ -380,7 +400,9 @@ export default function ManagementPage() {
       } else {
         const body = draft as ParameterDraft
         const payload = {
-          orgId: body.orgId.trim(),
+          orgId: body.profileScope === 'org' ? body.orgId.trim() : null,
+          deviceId: body.profileScope === 'terminal' ? body.deviceId.trim() : null,
+          profileScope: body.profileScope,
           profileName: body.profileName.trim(),
           description: blank(body.description),
           profileStatus: body.profileStatus,
@@ -417,7 +439,6 @@ export default function ManagementPage() {
       <section className="management-main">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <div className="eyebrow text-[9px] mb-1">Garuda Registry</div>
           <h1 className="font-display text-xl font-semibold" style={{ color: 'var(--foreground-strong)' }}>
             Management
           </h1>
@@ -441,8 +462,7 @@ export default function ManagementPage() {
               if (section === 'devices') setEditor({ kind: 'device', mode: 'create' })
               else if (section === 'organizations') setEditor({ kind: 'org', mode: 'create' })
               else if (section === 'vehicles') setEditor({ kind: 'vehicle', mode: 'create' })
-              else if (section === 'drivers') setEditor({ kind: 'driver', mode: 'create' })
-              else setEditor({ kind: 'parameter', mode: 'create' })
+              else setEditor({ kind: 'driver', mode: 'create' })
             }}
           >
             Add
@@ -490,8 +510,38 @@ export default function ManagementPage() {
           <DevicesTable
             search={search}
             onCreate={() => setEditor({ kind: 'device', mode: 'create' })}
-            onInspect={device => setInspector({ kind: 'device', record: device })}
-            onEdit={device => setEditor({ kind: 'device', mode: 'edit', device })}
+            onView={entry => {
+              if ('deviceId' in entry) setInspector({ kind: 'device', record: entry })
+              else setInspector({ kind: 'terminal', record: entry })
+            }}
+            onEdit={entry => {
+              if ('deviceId' in entry) {
+                setEditor({ kind: 'device', mode: 'edit', device: entry })
+              } else {
+                setEditor({
+                  kind: 'device',
+                  mode: 'create',
+                  device: {
+                    deviceId: '',
+                    orgId: '',
+                    orgName: '',
+                    terminalId: entry.terminalId,
+                    sim: entry.terminalId,
+                    protocolFamily: 'JT808',
+                    protocolVersion: 'JT/T 808-2013',
+                    deviceModel: '',
+                    manufacturerId: '',
+                    firmwareVersion: '',
+                    hardwareVersion: '',
+                    installStatus: 'installed',
+                    lifecycleStatus: 'active',
+                    lastSeenAt: null,
+                    plateNumber: entry.plateNumber ?? null,
+                    channelCount: 0,
+                  },
+                })
+              }
+            }}
             onDelete={deviceId => void removeEditor('device', deviceId)}
           />
         )}
@@ -500,7 +550,7 @@ export default function ManagementPage() {
           <OrganizationsTable
             search={search}
             onCreate={() => setEditor({ kind: 'org', mode: 'create' })}
-            onInspect={org => setInspector({ kind: 'org', record: org })}
+            onView={org => setInspector({ kind: 'org', record: org })}
             onEdit={org => setEditor({ kind: 'org', mode: 'edit', org })}
             onDelete={orgId => void removeEditor('org', orgId)}
           />
@@ -510,7 +560,7 @@ export default function ManagementPage() {
           <VehiclesTable
             search={search}
             onCreate={() => setEditor({ kind: 'vehicle', mode: 'create' })}
-            onInspect={vehicle => setInspector({ kind: 'vehicle', record: vehicle })}
+            onView={vehicle => setInspector({ kind: 'vehicle', record: vehicle })}
             onEdit={vehicle => setEditor({ kind: 'vehicle', mode: 'edit', vehicle })}
             onDelete={vehicleId => void removeEditor('vehicle', vehicleId)}
           />
@@ -519,18 +569,9 @@ export default function ManagementPage() {
           <DriversTable
             search={search}
             onCreate={() => setEditor({ kind: 'driver', mode: 'create' })}
-            onInspect={driver => setInspector({ kind: 'driver', record: driver })}
+            onView={driver => setInspector({ kind: 'driver', record: driver })}
             onEdit={driver => setEditor({ kind: 'driver', mode: 'edit', driver })}
             onDelete={driverId => void removeEditor('driver', driverId)}
-          />
-        )}
-        {section === 'parameters' && (
-          <ParametersTable
-            search={search}
-            onCreate={() => setEditor({ kind: 'parameter', mode: 'create' })}
-            onInspect={profile => setInspector({ kind: 'parameter', record: profile })}
-            onEdit={profile => setEditor({ kind: 'parameter', mode: 'edit', profile })}
-            onDelete={profileId => void removeEditor('parameter', profileId)}
           />
         )}
       </div>
@@ -559,8 +600,32 @@ export default function ManagementPage() {
         />
       )}
       </section>
-      <ManagementInspector inspector={inspector} onEdit={record => {
+      <ManagementInspector inspector={inspector} onClose={() => setInspector(null)} onEdit={record => {
         if (record.kind === 'device') setEditor({ kind: 'device', mode: 'edit', device: record.record })
+        else if (record.kind === 'terminal') {
+          setEditor({
+            kind: 'device',
+            mode: 'create',
+            device: {
+              deviceId: '',
+              orgId: '',
+              orgName: '',
+              terminalId: record.record.terminalId,
+              sim: record.record.terminalId,
+              protocolFamily: 'JT808',
+              protocolVersion: 'JT/T 808-2013',
+              deviceModel: '',
+              manufacturerId: '',
+              firmwareVersion: '',
+              hardwareVersion: '',
+              installStatus: 'installed',
+              lifecycleStatus: 'active',
+              lastSeenAt: null,
+              plateNumber: record.record.plateNumber ?? null,
+              channelCount: 0,
+            },
+          })
+        }
         else if (record.kind === 'org') setEditor({ kind: 'org', mode: 'edit', org: record.record })
         else if (record.kind === 'vehicle') setEditor({ kind: 'vehicle', mode: 'edit', vehicle: record.record })
         else if (record.kind === 'driver') setEditor({ kind: 'driver', mode: 'edit', driver: record.record })
@@ -573,47 +638,96 @@ export default function ManagementPage() {
 function DevicesTable({
   search,
   onCreate,
-  onInspect,
+  onView,
   onEdit,
   onDelete,
 }: {
   search: string
   onCreate: () => void
-  onInspect: (device: RegistryDevice) => void
-  onEdit: (device: RegistryDevice) => void
+  onView: (device: RegistryDevice | Terminal) => void
+  onEdit: (device: RegistryDevice | Terminal) => void
   onDelete: (deviceId: string) => void
 }) {
   const { data: devices = [], isLoading } = useRegistryDevices()
   const { data: terminals = [] } = useTerminals()
-  const online = useMemo(() => new Set(terminals.map(t => t.terminalId)), [terminals])
-  const rows = filterRows(devices, search, d => [
-    d.terminalId, d.sim, d.plateNumber, d.orgName, d.deviceModel, d.installStatus, d.lifecycleStatus,
-  ])
-
+  const terminalMap = useMemo(() => new Map(terminals.map(terminal => [terminal.terminalId, terminal])), [terminals])
+  const displayRows = useMemo(() => {
+    const registryRows = devices.map(device => ({
+      kind: 'registry' as const,
+      device,
+      online: terminalMap.has(device.terminalId),
+    }))
+    const liveOnlyRows = terminals
+      .filter(terminal => !devices.some(device => device.terminalId === terminal.terminalId))
+      .map(terminal => ({ kind: 'terminal' as const, terminal }))
+    return [...registryRows, ...liveOnlyRows]
+  }, [devices, terminals, terminalMap])
+  const rows = filterRows(displayRows, search, row => row.kind === 'registry'
+    ? [
+        row.device.terminalId,
+        row.device.sim,
+        row.device.plateNumber,
+        row.device.orgName,
+        row.device.deviceModel,
+        'registered',
+        row.online ? 'online' : 'offline',
+        row.device.installStatus,
+        row.device.lifecycleStatus,
+      ]
+    : [
+        row.terminal.terminalId,
+        row.terminal.plateNumber,
+        'unregistered',
+        'authenticated',
+        row.terminal.manufacturerId,
+      ])
   return (
     <RegistryTable
       loading={isLoading}
-      empty="No registered devices"
-      headers={['Status', 'Terminal', 'Plate', 'Organization', 'Model', 'Protocol', 'Channels', 'Lifecycle', 'Actions']}
-      rows={rows.map(d => [
-        <StatusPill key="status" label={online.has(d.terminalId) ? 'online' : d.installStatus} tone={online.has(d.terminalId) ? 'ok' : 'muted'} />,
-        <Mono key="terminal" strong>{d.terminalId}</Mono>,
-        <Mono key="plate">{d.plateNumber ?? '-'}</Mono>,
-        d.orgName,
-        d.deviceModel ?? '-',
-        `${d.protocolFamily} · ${d.protocolVersion}`,
-        String(d.channelCount),
-        <StatusPill key="life" label={d.lifecycleStatus} tone={d.lifecycleStatus === 'active' ? 'ok' : 'warn'} />,
+      empty="No devices or connected terminals"
+      headers={['State', 'Terminal', 'Plate', 'Organization', 'Model', 'Protocol', 'Channels', 'Lifecycle', 'Actions']}
+      rows={rows.map(row => row.kind === 'registry' ? [
+        <div key="status" className="flex flex-wrap gap-1">
+          <StatusPill label="registered" tone="ok" />
+          <StatusPill label={row.online ? 'online' : 'offline'} tone={row.online ? 'ok' : 'muted'} />
+        </div>,
+        <Mono key="terminal" strong>{row.device.terminalId}</Mono>,
+        <Mono key="plate">{row.device.plateNumber ?? '-'}</Mono>,
+        row.device.orgName,
+        row.device.deviceModel ?? '-',
+        `${row.device.protocolFamily} · ${row.device.protocolVersion}`,
+        String(row.device.channelCount),
+        <StatusPill key="life" label={row.device.lifecycleStatus} tone={row.device.lifecycleStatus === 'active' ? 'ok' : 'warn'} />,
         <RowActions
           key="actions"
-          onEdit={() => onEdit(d)}
-          onDelete={() => onDelete(d.deviceId)}
-          canDelete={d.channelCount === 0 && d.plateNumber == null}
+          onView={() => onView(row.device)}
+          onEdit={() => onEdit(row.device)}
+          onDelete={() => onDelete(row.device.deviceId)}
+          canDelete={row.device.channelCount === 0 && row.device.plateNumber == null}
+        />,
+      ] : [
+        <div key="status" className="flex flex-wrap gap-1">
+          <StatusPill label="unregistered" tone="warn" />
+          <StatusPill label="authenticated" tone="ok" />
+        </div>,
+        <Mono key="terminal" strong>{row.terminal.terminalId}</Mono>,
+        <Mono key="plate">{row.terminal.plateNumber ?? '-'}</Mono>,
+        'Not onboarded',
+        row.terminal.manufacturerId ?? '-',
+        '-',
+        '0',
+        <StatusPill key="life" label="live" tone="ok" />,
+        <RowActions
+          key="actions"
+          onView={() => onView(row.terminal)}
+          onEdit={() => onEdit(row.terminal)}
+          onDelete={() => {}}
+          canDelete={false}
         />,
       ])}
-      onRowClick={rows.map(d => () => onInspect(d))}
+      onRowClick={rows.map(row => () => onView(row.kind === 'registry' ? row.device : row.terminal))}
       onCreate={onCreate}
-      createLabel="Add device"
+          createLabel="Add device"
     />
   )
 }
@@ -621,13 +735,13 @@ function DevicesTable({
 function OrganizationsTable({
   search,
   onCreate,
-  onInspect,
+  onView,
   onEdit,
   onDelete,
 }: {
   search: string
   onCreate: () => void
-  onInspect: (org: OrgUnit) => void
+  onView: (org: OrgUnit) => void
   onEdit: (org: OrgUnit) => void
   onDelete: (orgId: string) => void
 }) {
@@ -635,7 +749,6 @@ function OrganizationsTable({
   const rows = filterRows(orgs, search, o => [
     o.orgCode, o.orgName, o.orgKind, o.status, o.parentOrgName, o.contactName, o.contactPhone,
   ])
-
   return (
     <RegistryTable
       loading={isLoading}
@@ -652,12 +765,13 @@ function OrganizationsTable({
         <StatusPill key="status" label={o.status} tone={o.status === 'active' ? 'ok' : 'warn'} />,
         <RowActions
           key="actions"
+          onView={() => onView(o)}
           onEdit={() => onEdit(o)}
           onDelete={() => onDelete(o.orgId)}
           canDelete={o.deviceCount === 0 && o.vehicleCount === 0 && o.parentOrgId == null}
         />,
       ])}
-      onRowClick={rows.map(o => () => onInspect(o))}
+      onRowClick={rows.map(o => () => onView(o))}
       onCreate={onCreate}
       createLabel="Add organization"
     />
@@ -667,13 +781,13 @@ function OrganizationsTable({
 function VehiclesTable({
   search,
   onCreate,
-  onInspect,
+  onView,
   onEdit,
   onDelete,
 }: {
   search: string
   onCreate: () => void
-  onInspect: (vehicle: VehicleAsset) => void
+  onView: (vehicle: VehicleAsset) => void
   onEdit: (vehicle: VehicleAsset) => void
   onDelete: (vehicleId: string) => void
 }) {
@@ -681,7 +795,6 @@ function VehiclesTable({
   const rows = filterRows(vehicles, search, v => [
     v.plateNumber, v.vin, v.orgName, v.terminalId, v.vehicleKind, v.operationStatus, v.currentDriverName,
   ])
-
   return (
     <RegistryTable
       loading={isLoading}
@@ -697,12 +810,13 @@ function VehiclesTable({
         <StatusPill key="status" label={v.operationStatus} tone={v.operationStatus === 'active' ? 'ok' : 'muted'} />,
         <RowActions
           key="actions"
+          onView={() => onView(v)}
           onEdit={() => onEdit(v)}
           onDelete={() => onDelete(v.vehicleId)}
           canDelete={v.currentDriverId == null}
         />,
       ])}
-      onRowClick={rows.map(v => () => onInspect(v))}
+      onRowClick={rows.map(v => () => onView(v))}
       onCreate={onCreate}
       createLabel="Add vehicle"
     />
@@ -712,13 +826,13 @@ function VehiclesTable({
 function DriversTable({
   search,
   onCreate,
-  onInspect,
+  onView,
   onEdit,
   onDelete,
 }: {
   search: string
   onCreate: () => void
-  onInspect: (driver: DriverProfile) => void
+  onView: (driver: DriverProfile) => void
   onEdit: (driver: DriverProfile) => void
   onDelete: (driverId: string) => void
 }) {
@@ -726,7 +840,6 @@ function DriversTable({
   const rows = filterRows(drivers, search, d => [
     d.displayName, d.phone, d.orgName, d.licenseNumber, d.qualificationNumber, d.riskLabel, d.currentVehiclePlate,
   ])
-
   return (
     <RegistryTable
       loading={isLoading}
@@ -743,68 +856,58 @@ function DriversTable({
         <StatusPill key="status" label={d.employmentStatus} tone={d.employmentStatus === 'active' ? 'ok' : 'muted'} />,
         <RowActions
           key="actions"
+          onView={() => onView(d)}
           onEdit={() => onEdit(d)}
           onDelete={() => onDelete(d.driverId)}
           canDelete={d.currentVehiclePlate == null}
         />,
       ])}
-      onRowClick={rows.map(d => () => onInspect(d))}
+      onRowClick={rows.map(d => () => onView(d))}
       onCreate={onCreate}
       createLabel="Add driver"
     />
   )
 }
 
-function ParametersTable({
-  search,
-  onCreate,
-  onInspect,
-  onEdit,
-  onDelete,
+function DeviceParametersPanel({
+  device,
 }: {
-  search: string
-  onCreate: () => void
-  onInspect: (profile: ParameterProfile) => void
-  onEdit: (profile: ParameterProfile) => void
-  onDelete: (profileId: string) => void
+  device: RegistryDevice
 }) {
-  const { data: profiles = [], isLoading } = useParameterProfiles()
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null)
   const [itemDraft, setItemDraft] = useState<ParameterItemDraft>(EMPTY_PARAMETER_ITEM)
   const [itemError, setItemError] = useState<string | null>(null)
-  const [targetDeviceId, setTargetDeviceId] = useState('')
-  const [pushError, setPushError] = useState<string | null>(null)
+  const [profileError, setProfileError] = useState<string | null>(null)
+  const createProfile = useCreateParameterProfile()
   const createItem = useCreateParameterItem()
   const updateItem = useUpdateParameterItem()
   const deleteItem = useDeleteParameterItem()
   const applyProfile = useApplyParameterProfile()
   const { data: catalog = [] } = useParameterCatalog()
-  const { data: devices = [] } = useRegistryDevices()
-  const { data: pushes = [], isLoading: isLoadingPushes } = useParameterPushes()
-  const rows = filterRows(profiles, search, p => [
-    p.profileName, p.orgName, p.profileStatus, p.description,
-  ])
-  const selectedProfile = profiles.find(p => p.profileId === selectedProfileId) ?? profiles[0] ?? null
+  const { data: profiles = [] } = useParameterProfiles()
+  const { data: pushes = [] } = useParameterPushes()
+  const { data: effectiveParameters, isLoading: isLoadingEffective } = useEffectiveParameters(device.deviceId)
+
+  const terminalProfiles = useMemo(
+    () => profiles.filter(profile => profile.profileScope === 'terminal' && profile.deviceId === device.deviceId),
+    [profiles, device.deviceId],
+  )
+  const selectedProfile = terminalProfiles.find(profile => profile.profileId === selectedProfileId) ?? terminalProfiles[0] ?? null
   const effectiveProfileId = selectedProfile?.profileId ?? null
   const { data: items = [], isLoading: isLoadingItems } = useParameterItems(effectiveProfileId)
-  const matchingDevices = selectedProfile
-    ? devices.filter(device => device.orgId === selectedProfile.orgId)
-    : devices
-  const profilePushes = effectiveProfileId
-    ? pushes.filter(push => push.profileId === effectiveProfileId).slice(0, 8)
-    : []
   const catalogById = useMemo(() => new Map(catalog.map(entry => [entry.parameterId, entry])), [catalog])
-  const selectedCatalogEntry = itemDraft.parameterId
-    ? catalogById.get(parseParameterIdLoose(itemDraft.parameterId))
-    : null
+  const catalogGroups = useMemo(() => groupCatalogByCategory(catalog), [catalog])
+  const profilePushes = effectiveProfileId ? pushes.filter(push => push.profileId === effectiveProfileId).slice(0, 6) : []
 
   useEffect(() => {
-    if (!selectedProfileId && profiles.length > 0) {
-      setSelectedProfileId(profiles[0].profileId)
-    } else if (selectedProfileId && profiles.length > 0 && !profiles.some(p => p.profileId === selectedProfileId)) {
-      setSelectedProfileId(profiles[0].profileId)
+    if (!selectedProfileId && terminalProfiles.length > 0) {
+      setSelectedProfileId(terminalProfiles[0].profileId)
+    } else if (selectedProfileId && terminalProfiles.length > 0 && !terminalProfiles.some(profile => profile.profileId === selectedProfileId)) {
+      setSelectedProfileId(terminalProfiles[0].profileId)
+    } else if (selectedProfileId && terminalProfiles.length === 0) {
+      setSelectedProfileId(null)
     }
-  }, [profiles, selectedProfileId])
+  }, [terminalProfiles, selectedProfileId])
 
   function editItem(item: ParameterItem) {
     setItemError(null)
@@ -850,109 +953,83 @@ function ParametersTable({
     }
   }
 
-  async function applySelectedProfile() {
+  async function createTerminalProfile() {
+    try {
+      setProfileError(null)
+      const profile = await createProfile.mutateAsync({
+        orgId: device.orgId,
+        deviceId: device.deviceId,
+        profileScope: 'terminal',
+        profileName: `${device.terminalId} parameters`,
+        description: `${device.terminalId} terminal override`,
+        profileStatus: 'active',
+      })
+      setSelectedProfileId(profile.profileId)
+    } catch (err) {
+      setProfileError(readError(err))
+    }
+  }
+
+  async function queuePush() {
     if (!effectiveProfileId) return
     try {
-      setPushError(null)
-      if (!targetDeviceId) throw new Error('select a target device')
-      await applyProfile.mutateAsync({ profileId: effectiveProfileId, deviceId: targetDeviceId })
+      setProfileError(null)
+      await applyProfile.mutateAsync({ profileId: effectiveProfileId, deviceId: device.deviceId })
     } catch (err) {
-      setPushError(readError(err))
+      setProfileError(readError(err))
     }
   }
 
   return (
-    <div>
-      <RegistryTable
-        loading={isLoading}
-        empty="No parameter profiles"
-        headers={['Profile', 'Organization', 'Items', 'Description', 'Status', 'Actions']}
-        rows={rows.map(p => [
-          <button
-            key="profile"
-            className="font-mono text-[11px]"
-            style={{ color: effectiveProfileId === p.profileId ? 'var(--electric)' : 'var(--muted-strong)', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
-            onClick={event => {
-              event.stopPropagation()
-              setSelectedProfileId(p.profileId)
-              onInspect(p)
-            }}
-          >
-            {p.profileName}
-          </button>,
-          p.orgName,
-          String(p.itemCount),
-          p.description ?? '-',
-          <StatusPill key="status" label={p.profileStatus} tone={p.profileStatus === 'active' ? 'ok' : 'muted'} />,
-          <div key="actions" className="flex items-center gap-2">
-            <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '11px' }} onClick={event => {
-              event.stopPropagation()
-              setSelectedProfileId(p.profileId)
-              onInspect(p)
-            }}>
-              Items
-            </button>
-            <RowActions
-              onEdit={() => onEdit(p)}
-              onDelete={() => onDelete(p.profileId)}
-              canDelete={p.itemCount === 0}
-            />
-          </div>,
-        ])}
-        onRowClick={rows.map(p => () => {
-          setSelectedProfileId(p.profileId)
-          onInspect(p)
-        })}
-        onCreate={onCreate}
-        createLabel="Add profile"
-      />
-
-      {selectedProfile && (
-        <div className="px-4 py-4 space-y-4" style={{ borderTop: '1px solid var(--border)' }}>
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="eyebrow text-[9px] mb-1">Parameter Items</div>
-              <div className="font-display text-base font-semibold" style={{ color: 'var(--foreground-strong)' }}>{selectedProfile.profileName}</div>
+    <div className="space-y-3">
+      <div className="surface-panel-quiet px-4 py-3 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="font-display text-sm font-semibold" style={{ color: 'var(--foreground-strong)' }}>
+              {device.terminalId}
             </div>
-            <button className="btn-secondary" onClick={() => setItemDraft(EMPTY_PARAMETER_ITEM)}>
-              New item
-            </button>
+            <div className="font-mono text-[10px]" style={{ color: 'var(--muted-strong)' }}>
+              {device.orgName}
+            </div>
           </div>
+          {selectedProfile ? (
+            <StatusPill label={selectedProfile.profileStatus} tone={selectedProfile.profileStatus === 'active' ? 'ok' : 'muted'} />
+          ) : (
+            <button className="btn-primary" onClick={() => void createTerminalProfile()} disabled={createProfile.isPending}>
+              Create override
+            </button>
+          )}
+        </div>
 
-          <div className="parameter-apply-panel">
-            <div>
-              <div className="eyebrow text-[9px] mb-1">Apply Profile</div>
-              <div className="font-mono text-[11px]" style={{ color: 'var(--muted-strong)' }}>
-                Queue this parameter profile against a registered terminal device.
-              </div>
-            </div>
-            <select value={targetDeviceId} onChange={e => setTargetDeviceId(e.target.value)}>
-              <option value="">Select device</option>
-              {matchingDevices.map(device => (
-                <option key={device.deviceId} value={device.deviceId}>
-                  {device.terminalId}{device.plateNumber ? ` · ${device.plateNumber}` : ''} · {device.orgName}
-                </option>
-              ))}
-            </select>
-            <button className="btn-primary" onClick={() => void applySelectedProfile()} disabled={applyProfile.isPending}>
+        {profileError && (
+          <div className="font-mono text-[11px]" style={{ color: 'var(--status-warn)' }}>
+            {profileError}
+          </div>
+        )}
+
+        {terminalProfiles.length > 1 && (
+          <select value={selectedProfileId ?? ''} onChange={e => setSelectedProfileId(e.target.value || null)}>
+            <option value="">Select override</option>
+            {terminalProfiles.map(profile => (
+              <option key={profile.profileId} value={profile.profileId}>{profile.profileName}</option>
+            ))}
+          </select>
+        )}
+
+        {selectedProfile && (
+          <div className="flex items-center justify-between gap-2 font-mono text-[10px]" style={{ color: 'var(--muted-strong)' }}>
+            <span>{selectedProfile.itemCount} items</span>
+            <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '11px' }} onClick={() => void queuePush()} disabled={applyProfile.isPending}>
               Queue push
             </button>
           </div>
+        )}
+      </div>
 
-          {pushError && (
-            <div className="surface-panel-quiet px-4 py-3 font-mono text-[12px]" style={{ color: 'var(--status-warn)' }}>
-              {pushError}
-            </div>
-          )}
-
-          {itemError && (
-            <div className="surface-panel-quiet px-4 py-3 font-mono text-[12px]" style={{ color: 'var(--status-warn)' }}>
-              {itemError}
-            </div>
-          )}
-
-          <div className="grid grid-cols-4 gap-3">
-            <Field label="Parameter">
+      {selectedProfile ? (
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Parameter" className="col-span-2">
               <select
                 value={itemDraft.parameterId ? String(parseParameterIdLoose(itemDraft.parameterId)) : ''}
                 onChange={e => {
@@ -967,10 +1044,14 @@ function ParametersTable({
                 }}
               >
                 <option value="">Select parameter</option>
-                {catalog.map(entry => (
-                  <option key={entry.parameterId} value={entry.parameterId}>
-                    {entry.hexId} · {entry.parameterName}
-                  </option>
+                {catalogGroups.map(group => (
+                  <optgroup key={group.category} label={group.category}>
+                    {group.entries.map(entry => (
+                      <option key={entry.parameterId} value={entry.parameterId}>
+                        {entry.hexId} · {entry.parameterName}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </Field>
@@ -983,11 +1064,10 @@ function ParametersTable({
                 <option value="bytes">bytes</option>
               </select>
             </Field>
-            <Field label="Value" className="col-span-2">
+            <Field label="Value">
               <input value={itemDraft.valueText} onChange={e => setItemDraft({ ...itemDraft, valueText: e.target.value })} placeholder="30" />
             </Field>
           </div>
-          {selectedCatalogEntry && <ParameterCatalogCard entry={selectedCatalogEntry} />}
           <div className="flex items-center justify-end gap-2">
             {itemDraft.itemId && (
               <button className="btn-secondary" onClick={() => setItemDraft(EMPTY_PARAMETER_ITEM)}>
@@ -999,21 +1079,23 @@ function ParametersTable({
             </button>
           </div>
 
+          {itemError && (
+            <div className="surface-panel-quiet px-4 py-3 font-mono text-[11px]" style={{ color: 'var(--status-warn)' }}>
+              {itemError}
+            </div>
+          )}
+
           <RegistryTable
             loading={isLoadingItems}
-            empty="No parameter items"
-            headers={['Parameter', 'Name', 'Category', 'Value', 'Impact', 'Actions']}
+            empty="No terminal parameters"
+            headers={['Parameter', 'Name', 'Value', 'Actions']}
             rows={items.map(item => [
               <Mono key="param" strong>{formatParameterId(item.parameterId)}</Mono>,
               <ParameterName key="name" entry={catalogById.get(item.parameterId)} fallback={item.valueKind} />,
-              catalogById.get(item.parameterId)?.category ?? '-',
               <Mono key="value">{item.valueText}{catalogById.get(item.parameterId)?.unit ? ` ${catalogById.get(item.parameterId)?.unit}` : ''}</Mono>,
-              <div key="impact" className="flex items-center gap-2">
-                {catalogById.get(item.parameterId)?.alarmRelated && <StatusPill label="alarm" tone="warn" />}
-                {catalogById.get(item.parameterId)?.requiresRestart && <StatusPill label="restart" tone="muted" />}
-              </div>,
               <RowActions
                 key="actions"
+                onView={() => editItem(item)}
                 onEdit={() => editItem(item)}
                 onDelete={() => void removeItem(item)}
                 canDelete
@@ -1021,21 +1103,28 @@ function ParametersTable({
             ])}
           />
 
-          <div>
-            <div className="eyebrow text-[9px] mb-2">Push Audit</div>
+          <EffectiveParameterPanel
+            loading={isLoadingEffective}
+            parameters={effectiveParameters?.parameters ?? []}
+            layers={effectiveParameters?.layers ?? []}
+          />
+
+          {profilePushes.length > 0 && (
             <RegistryTable
-              loading={isLoadingPushes}
+              loading={false}
               empty="No profile push history"
-              headers={['Target', 'Status', 'Requested', 'Requested by', 'Result']}
+              headers={['Status', 'Requested', 'Result']}
               rows={profilePushes.map(push => [
-                <Mono key="target" strong>{push.plateNumber ?? push.terminalId}</Mono>,
                 <StatusPill key="status" label={push.pushStatus} tone={push.pushStatus === 'acked' || push.pushStatus === 'sent' || push.pushStatus === 'queued' ? 'ok' : 'warn'} />,
                 push.requestedAt ? new Date(push.requestedAt).toLocaleString() : '-',
-                push.requestedBy ?? '-',
                 push.resultMessage ?? '-',
               ])}
             />
-          </div>
+          )}
+        </>
+      ) : (
+        <div className="surface-panel-quiet px-4 py-6 font-mono text-[11px]" style={{ color: 'var(--muted)' }}>
+          Create a terminal override to edit parameters for this device.
         </div>
       )}
     </div>
@@ -1060,7 +1149,7 @@ function RegistryTable({
   createLabel?: string
 }) {
   if (loading) {
-    return <div className="px-5 py-8 font-mono text-[12px]" style={{ color: 'var(--muted)' }}>Loading registry...</div>
+    return <div className="px-5 py-8 font-mono text-[12px]" style={{ color: 'var(--muted)' }}>Loading...</div>
   }
 
   if (rows.length === 0) {
@@ -1085,13 +1174,13 @@ function RegistryTable({
           </button>
         </div>
       )}
-      <table className="w-full min-w-[980px]">
+      <table className="w-full min-w-[900px] management-table">
         <thead>
           <tr style={{ borderBottom: '1px solid var(--border)' }}>
             {headers.map(h => (
               <th
                 key={h}
-                className="text-left px-5 py-3 font-mono text-[10px] uppercase tracking-[0.2em]"
+                className="text-left px-4 py-2 font-mono text-[9px] uppercase tracking-[0.2em]"
                 style={{ color: 'var(--muted)' }}
               >
                 {h}
@@ -1101,16 +1190,16 @@ function RegistryTable({
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr
-              key={i}
-              style={{ borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : 'none' }}
-              className={onRowClick?.[i] ? 'registry-row-clickable' : ''}
-              onClick={onRowClick?.[i]}
+              <tr
+                key={i}
+                style={{ borderBottom: i < rows.length - 1 ? '1px solid var(--border)' : 'none' }}
+                className={onRowClick?.[i] ? 'registry-row-clickable' : ''}
+                onClick={onRowClick?.[i]}
               onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-1)')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
             >
               {row.map((cell, j) => (
-                <td key={j} className="px-5 py-3 text-[12px]" style={{ color: 'var(--muted-strong)', verticalAlign: 'middle' }}>
+                <td key={j} className="px-4 py-2 text-[11px]" style={{ color: 'var(--muted-strong)', verticalAlign: 'middle' }}>
                   {cell}
                 </td>
               ))}
@@ -1132,33 +1221,81 @@ function ParameterName({ entry, fallback }: { entry?: ParameterCatalogEntry; fal
   )
 }
 
-function ParameterCatalogCard({ entry }: { entry: ParameterCatalogEntry }) {
+function EffectiveParameterPanel({
+  loading,
+  parameters,
+  layers,
+}: {
+  loading: boolean
+  parameters: EffectiveParameter[]
+  layers: { layer: string; label: string; target?: string; profileId: string | null; precedence: number }[]
+}) {
+  const highlighted = parameters.filter(parameter =>
+    parameter.sourceProfileId || parameter.parameterId === 1 || parameter.parameterId === 41 || parameter.alarmRelated,
+  ).slice(0, 12)
+  const grouped = useMemo(() => groupEffectiveParametersByCategory(highlighted), [highlighted])
+
   return (
-    <div className="parameter-catalog-card">
-      <div className="parameter-catalog-main">
-        <div>
-          <div className="eyebrow text-[9px]">{entry.category}</div>
-          <div className="parameter-catalog-title">{entry.hexId} · {entry.parameterName}</div>
+    <div className="surface-panel-quiet px-4 py-3 space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="font-mono text-[11px]" style={{ color: 'var(--muted-strong)' }}>
+          {loading ? 'Resolving policy layers...' : `${parameters.length} catalog values resolved across ${layers.length} layers`}
         </div>
         <div className="flex items-center gap-2">
-          {entry.alarmRelated && <StatusPill label="alarm logic" tone="warn" />}
-          {entry.requiresRestart && <StatusPill label="reconnect" tone="muted" />}
+          {layers.filter(layer => layer.profileId).map(layer => (
+            <StatusPill key={`${layer.profileId}-${layer.precedence}`} label={layer.layer} tone={layer.layer === 'terminal' ? 'warn' : 'muted'} />
+          ))}
         </div>
       </div>
-      <div className="parameter-catalog-desc" title={entry.longDescription ?? entry.shortDescription}>
-        {entry.longDescription ?? entry.shortDescription}
-      </div>
-      <div className="parameter-catalog-grid">
-        <span>Kind <strong>{entry.valueKind}</strong></span>
-        <span>Unit <strong>{entry.unit ?? '-'}</strong></span>
-        <span>Range <strong>{entry.minValue ?? '-'} to {entry.maxValue ?? '-'}</strong></span>
-        <span>Default <strong>{entry.defaultValue ?? '-'}</strong></span>
-      </div>
-      {entry.businessImpact && (
-        <div className="parameter-impact" title={entry.businessImpact}>
-          {entry.businessImpact}
-        </div>
-      )}
+      <RegistryTable
+        loading={loading}
+        empty="No effective parameters"
+        headers={['Parameter', 'Value', 'Source', 'Impact']}
+        rows={grouped.flatMap(group => ([
+          [
+            <div key={`group-${group.category}`} className="font-display text-sm font-semibold" style={{ color: 'var(--foreground-strong)' }}>
+              {group.category}
+            </div>,
+            <span key="group-value" className="font-mono text-[10px]" style={{ color: 'var(--muted)' }}>
+              {group.entries.length} parameters
+            </span>,
+            <span key="group-source" className="font-mono text-[10px]" style={{ color: 'var(--muted)' }}>
+              grouped by function
+            </span>,
+            <span key="group-impact" className="font-mono text-[10px]" style={{ color: 'var(--muted)' }}>
+              preview
+            </span>,
+          ],
+          ...group.entries.map(parameter => [
+            <ParameterName key="name" entry={{
+              parameterId: parameter.parameterId,
+              hexId: parameter.hexId,
+              parameterName: parameter.parameterName,
+              shortDescription: parameter.category,
+              longDescription: null,
+              valueKind: parameter.valueKind,
+              unit: parameter.unit,
+              minValue: null,
+              maxValue: null,
+              defaultValue: parameter.valueText,
+              category: parameter.category,
+              businessImpact: null,
+              alarmRelated: parameter.alarmRelated,
+              requiresRestart: parameter.requiresRestart,
+              tableRef: 'JT808 Table 12',
+            }} fallback={parameter.valueKind} />,
+            <Mono key="value">{parameter.valueText ?? '-'}{parameter.unit ? ` ${parameter.unit}` : ''}</Mono>,
+            <span key="source" className="parameter-name">
+              <span>{parameter.sourceProfileName}</span>
+              <small>{parameter.sourceLayer}</small>
+            </span>,
+            <div key="impact" className="flex items-center gap-2">
+              {parameter.alarmRelated && <StatusPill label="alarm" tone="warn" />}
+              {parameter.requiresRestart && <StatusPill label="restart" tone="muted" />}
+            </div>,
+          ]),
+        ]))}
+      />
     </div>
   )
 }
@@ -1213,7 +1350,6 @@ function EditorDialog({
       >
         <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
           <div>
-            <div className="eyebrow text-[9px] mb-1">Garuda Registry</div>
             <div className="font-display text-lg font-semibold" style={{ color: 'var(--foreground-strong)' }}>{title}</div>
           </div>
           <button
@@ -1235,7 +1371,7 @@ function EditorDialog({
           ) : editor.kind === 'driver' ? (
             <DriverForm draft={draft as DriverDraft} orgOptions={orgOptions} onChange={next => onChange(next)} />
           ) : (
-            <ParameterForm draft={draft as ParameterDraft} orgOptions={orgOptions} onChange={next => onChange(next)} />
+            <ParameterForm draft={draft as ParameterDraft} orgOptions={orgOptions} deviceOptions={deviceOptions} onChange={next => onChange(next)} />
           )}
 
           <div className="flex items-center justify-end gap-2 pt-2">
@@ -1502,14 +1638,32 @@ function DriverForm({
 function ParameterForm({
   draft,
   orgOptions,
+  deviceOptions,
   onChange,
 }: {
   draft: ParameterDraft
   orgOptions: OrgUnit[]
+  deviceOptions: RegistryDevice[]
   onChange: (next: ParameterDraft) => void
 }) {
   return (
     <div className="grid grid-cols-2 gap-3">
+      <Field label="Scope">
+        <select
+          value={draft.profileScope}
+          onChange={e => onChange({
+            ...draft,
+            profileScope: e.target.value as ParameterDraft['profileScope'],
+            orgId: e.target.value === 'org' ? draft.orgId : '',
+            deviceId: e.target.value === 'terminal' ? draft.deviceId : '',
+          })}
+        >
+          <option value="org">organization</option>
+          <option value="terminal">terminal override</option>
+          <option value="global">global default</option>
+        </select>
+      </Field>
+      {draft.profileScope === 'org' ? (
       <Field label="Organization">
         <select value={draft.orgId} onChange={e => onChange({ ...draft, orgId: e.target.value })}>
           <option value="">Select organization</option>
@@ -1518,6 +1672,22 @@ function ParameterForm({
           ))}
         </select>
       </Field>
+      ) : draft.profileScope === 'terminal' ? (
+      <Field label="Terminal device">
+        <select value={draft.deviceId} onChange={e => onChange({ ...draft, deviceId: e.target.value })}>
+          <option value="">Select device</option>
+          {deviceOptions.map(device => (
+            <option key={device.deviceId} value={device.deviceId}>
+              {device.terminalId}{device.plateNumber ? ` · ${device.plateNumber}` : ''} · {device.orgName}
+            </option>
+          ))}
+        </select>
+      </Field>
+      ) : (
+      <Field label="Target">
+        <input value="All terminals" disabled readOnly />
+      </Field>
+      )}
       <Field label="Profile name">
         <input value={draft.profileName} onChange={e => onChange({ ...draft, profileName: e.target.value })} placeholder="Default telemetry" />
       </Field>
@@ -1579,30 +1749,32 @@ function Field({
 }
 
 function RowActions({
+  onView,
   onEdit,
   onDelete,
   canDelete,
 }: {
+  onView: () => void
   onEdit: () => void
   onDelete: () => void
   canDelete: boolean
 }) {
   return (
     <div className="flex items-center gap-2" onClick={event => event.stopPropagation()}>
-      <button className="btn-secondary" style={{ padding: '4px 10px', fontSize: '11px' }} onClick={onEdit}>
-        ✎ Edit
+      <button className="icon-btn" title="View" aria-label="View" onClick={onView}>
+        <Eye size={14} strokeWidth={1.8} />
+      </button>
+      <button className="icon-btn" title="Edit" aria-label="Edit" onClick={onEdit}>
+        <PencilLine size={14} strokeWidth={1.8} />
       </button>
       <button
-        className="btn-secondary"
-        style={{
-          padding: '4px 10px',
-          fontSize: '11px',
-          opacity: canDelete ? 1 : 0.45,
-        }}
+        className="icon-btn danger"
+        title={canDelete ? 'Delete' : 'Delete unavailable'}
+        aria-label="Delete"
         onClick={onDelete}
         disabled={!canDelete}
       >
-        ⌫ Delete
+        <Trash2 size={14} strokeWidth={1.8} />
       </button>
     </div>
   )
@@ -1610,24 +1782,21 @@ function RowActions({
 
 function ManagementInspector({
   inspector,
+  onClose,
   onEdit,
 }: {
   inspector: InspectorState | null
+  onClose: () => void
   onEdit: (inspector: InspectorState) => void
 }) {
   if (!inspector) {
-    return (
-      <aside className="management-inspector">
-        <div className="management-inspector-empty">
-          <div className="eyebrow text-[9px]">Registry Inspector</div>
-          <div>Select a row to inspect registry context.</div>
-        </div>
-      </aside>
-    )
+    return null
   }
 
   const title = inspector.kind === 'device'
     ? inspector.record.terminalId
+    : inspector.kind === 'terminal'
+      ? inspector.record.terminalId
     : inspector.kind === 'org'
       ? inspector.record.orgName
       : inspector.kind === 'vehicle'
@@ -1637,6 +1806,8 @@ function ManagementInspector({
           : inspector.record.profileName
   const subtitle = inspector.kind === 'device'
     ? inspector.record.orgName
+    : inspector.kind === 'terminal'
+      ? `Connected at ${inspector.record.connectedAt}`
     : inspector.kind === 'org'
       ? inspector.record.orgCode
       : inspector.kind === 'vehicle'
@@ -1654,6 +1825,13 @@ function ManagementInspector({
         ['Lifecycle', inspector.record.lifecycleStatus],
         ['Channels', String(inspector.record.channelCount)],
       ]
+    : inspector.kind === 'terminal'
+      ? [
+          ['Plate', inspector.record.plateNumber ?? '-'],
+          ['Color', inspector.record.plateColorName ?? String(inspector.record.plateColor)],
+          ['Manufacturer', inspector.record.manufacturerId ?? '-'],
+          ['Connected', inspector.record.connectedAt],
+        ]
     : inspector.kind === 'org'
       ? [
           ['Type', inspector.record.orgKind],
@@ -1686,30 +1864,46 @@ function ManagementInspector({
             ]
           : [
               ['Profile ID', inspector.record.profileId],
+              ['Scope', inspector.record.profileScope],
+              ['Target', parameterProfileTarget(inspector.record)],
               ['Description', inspector.record.description ?? '-'],
               ['Items', String(inspector.record.itemCount)],
               ['Status', inspector.record.profileStatus],
             ]
 
   return (
-    <aside className="management-inspector">
-      <div className="management-inspector-head">
-        <div>
-          <div className="eyebrow text-[9px]">Registry Inspector</div>
-          <div className="management-inspector-title">{title}</div>
-          <div className="management-inspector-sub">{subtitle}</div>
-        </div>
-        <button className="btn-secondary" onClick={() => onEdit(inspector)}>Edit</button>
-      </div>
-      <div className="management-inspector-body">
-        {rows.map(([label, value]) => (
-          <div key={label} className="management-inspector-row">
-            <span>{label}</span>
-            <strong>{value}</strong>
+    <div
+      className="management-inspector-overlay"
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+    >
+      <aside className="management-inspector" onClick={e => e.stopPropagation()}>
+        <div className="management-inspector-head">
+          <div className="min-w-0">
+            <div className="management-inspector-title">{title}</div>
+            <div className="management-inspector-sub">{subtitle}</div>
           </div>
-        ))}
-      </div>
-    </aside>
+          <div className="flex items-center gap-2">
+            <button className="btn-secondary" onClick={onClose}>Close</button>
+            <button className="btn-secondary" onClick={() => onEdit(inspector)}>Edit</button>
+          </div>
+        </div>
+        <div className="management-inspector-body">
+          {rows.map(([label, value]) => (
+            <div key={label} className="management-inspector-row">
+              <span>{label}</span>
+              <strong>{value}</strong>
+            </div>
+          ))}
+          {inspector.kind === 'device' && (
+            <div className="mt-4">
+              <DeviceParametersPanel device={inspector.record} />
+            </div>
+          )}
+        </div>
+      </aside>
+    </div>
   )
 }
 
@@ -1781,8 +1975,50 @@ function filterRows<T>(rows: T[], search: string, pick: (row: T) => (string | nu
   return rows.filter(row => pick(row).some(value => String(value ?? '').toLowerCase().includes(q)))
 }
 
+function groupCatalogByCategory(entries: ParameterCatalogEntry[]) {
+  const byCategory = new Map<string, ParameterCatalogEntry[]>()
+  for (const entry of entries) {
+    const category = entry.category || 'Custom'
+    const group = byCategory.get(category) ?? []
+    group.push(entry)
+    byCategory.set(category, group)
+  }
+  const orderedCategories = [
+    ...PARAMETER_CATALOG_ORDER.filter(category => byCategory.has(category)),
+    ...Array.from(byCategory.keys()).filter(category => !PARAMETER_CATALOG_ORDER.includes(category as never)).sort(),
+  ]
+  return orderedCategories.map(category => ({
+    category,
+    entries: byCategory.get(category) ?? [],
+  }))
+}
+
+function groupEffectiveParametersByCategory(entries: EffectiveParameter[]) {
+  const byCategory = new Map<string, EffectiveParameter[]>()
+  for (const entry of entries) {
+    const category = entry.category || 'Custom'
+    const group = byCategory.get(category) ?? []
+    group.push(entry)
+    byCategory.set(category, group)
+  }
+  const orderedCategories = [
+    ...PARAMETER_CATALOG_ORDER.filter(category => byCategory.has(category)),
+    ...Array.from(byCategory.keys()).filter(category => !PARAMETER_CATALOG_ORDER.includes(category as never)).sort(),
+  ]
+  return orderedCategories.map(category => ({
+    category,
+    entries: byCategory.get(category) ?? [],
+  }))
+}
+
 function blank(value: string): string | null {
   return value.trim() ? value : null
+}
+
+function parameterProfileTarget(profile: ParameterProfile): string {
+  if (profile.profileScope === 'global') return 'All terminals'
+  if (profile.profileScope === 'terminal') return profile.plateNumber ?? profile.terminalId ?? profile.deviceId ?? '-'
+  return profile.orgName ?? profile.orgId ?? '-'
 }
 
 function parseParameterId(value: string): number {

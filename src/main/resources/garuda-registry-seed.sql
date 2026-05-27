@@ -102,9 +102,9 @@ VALUES
 ON CONFLICT DO NOTHING;
 
 INSERT INTO garuda_registry.terminal_parameter_profile
-    (profile_id, org_id, profile_name, description, profile_status)
+    (profile_id, org_id, device_id, profile_scope, profile_name, description, profile_status)
 VALUES
-    ('profile-camera-host', 'org-jamshedpur', 'Camera host defaults',
+    ('profile-camera-host', 'org-jamshedpur', NULL, 'org', 'Camera host defaults',
      'Heartbeat and location cadence used by the local camera-host simulator.', 'active')
 ON CONFLICT DO NOTHING;
 

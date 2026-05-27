@@ -4,6 +4,32 @@ import { useTerminals, useMediaSessions, useLatestPositions, useRecentAlarms } f
 import { useConfig } from '../../api/config'
 import type { Terminal, MediaSession, LatestPosition, RecentAlarm } from '../../types'
 
+const JT808_TIME_FORMAT = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Kolkata',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+})
+
+const IST_TIME_FORMAT = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Kolkata',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+})
+
+function formatGpsTime(value: string | null | undefined) {
+  return value ? JT808_TIME_FORMAT.format(new Date(value)) : '—'
+}
+
 function demoCoord(terminalId: string, home: [number, number]): [number, number] {
   let h = 0
   for (const c of terminalId) h = (h * 31 + c.charCodeAt(0)) >>> 0
@@ -288,10 +314,10 @@ function TerminalDetail({ terminal: t, position, alarm, alarmCount, streams, onB
           ['Plate', t.plateNumber || '—'],
           ['Plate color', t.plateColorName],
           ['Manufacturer', t.manufacturerId || '—'],
-          ['Connected', new Date(t.connectedAt).toLocaleString()],
+          ['Connected', IST_TIME_FORMAT.format(new Date(t.connectedAt))],
           ['GPS', position ? `${position.lat.toFixed(6)}, ${position.lon.toFixed(6)}` : '—'],
           ['Speed', position ? `${position.speed.toFixed(1)} km/h` : '—'],
-          ['GPS time', position ? new Date(position.gpsTime).toLocaleString() : '—'],
+          ['GPS time', formatGpsTime(position?.gpsTime)],
           ['Alarms', String(alarmCount)],
         ].map(([label, value]) => (
           <div key={label}>
@@ -308,7 +334,7 @@ function TerminalDetail({ terminal: t, position, alarm, alarmCount, streams, onB
             {alarm.alarmId}
           </div>
           <div className="font-mono text-[10px]" style={{ color: 'var(--muted)' }}>
-            Type {alarm.alarmType} · Level {alarm.alarmLevel} · {new Date(alarm.receivedAt).toLocaleString()}
+            Type {alarm.alarmType} · Level {alarm.alarmLevel} · {IST_TIME_FORMAT.format(new Date(alarm.receivedAt))}
           </div>
           <div className="font-mono text-[11px]" style={{ color: 'var(--foreground-strong)' }}>
             {alarm.lat.toFixed(6)}, {alarm.lon.toFixed(6)} · {alarm.speed.toFixed(1)} km/h
@@ -346,7 +372,7 @@ function popupHtml(
   alarmCount = 0,
 ) {
   const alarmLine = alarm
-    ? `<div style="color:var(--status-warn);margin-top:2px">Alarm ${alarm.alarmId} · ${new Date(alarm.receivedAt).toLocaleTimeString()}</div>`
+    ? `<div style="color:var(--status-warn);margin-top:2px">Alarm ${alarm.alarmId} · ${IST_TIME_FORMAT.format(new Date(alarm.receivedAt))}</div>`
     : `<div style="color:var(--muted);margin-top:2px">No recent alarm</div>`
   return `<div style="font-family:var(--ff-mono);font-size:11px;color:var(--foreground-strong);min-width:180px">
     <div style="color:var(--electric);font-weight:500">${t.plateNumber || t.terminalId}</div>

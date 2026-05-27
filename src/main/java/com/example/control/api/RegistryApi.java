@@ -3,6 +3,7 @@ package com.example.control.api;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import com.example.control.service.ParameterPushCoordinator;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -15,16 +16,20 @@ import org.springframework.web.bind.annotation.RestController;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/registry")
 public class RegistryApi {
     private final JdbcTemplate jdbc;
+    private final ParameterPushCoordinator parameterPushCoordinator;
 
-    public RegistryApi(JdbcTemplate jdbc) {
+    public RegistryApi(JdbcTemplate jdbc, ParameterPushCoordinator parameterPushCoordinator) {
         this.jdbc = jdbc;
+        this.parameterPushCoordinator = parameterPushCoordinator;
     }
 
     @GetMapping("/summary")
@@ -224,23 +229,36 @@ public class RegistryApi {
                 SELECT
                     p.profile_id       AS profile_id,
                     p.org_id           AS org_id,
+                    p.device_id        AS device_id,
+                    p.profile_scope    AS profile_scope,
                     o.org_name         AS org_name,
+                    d.terminal_id      AS terminal_id,
+                    v.plate_number     AS plate_number,
                     p.profile_name     AS profile_name,
                     p.description      AS description,
                     p.profile_status   AS profile_status,
                     COUNT(i.item_id)   AS item_count
                 FROM garuda_registry.terminal_parameter_profile p
-                JOIN garuda_registry.org_unit o
+                LEFT JOIN garuda_registry.org_unit o
                     ON o.org_id = p.org_id
+                LEFT JOIN garuda_registry.terminal_device d
+                    ON d.device_id = p.device_id
+                LEFT JOIN garuda_registry.vehicle_asset v
+                    ON v.device_id = d.device_id
                 LEFT JOIN garuda_registry.terminal_parameter_item i
                     ON i.profile_id = p.profile_id
-                GROUP BY p.profile_id, p.org_id, o.org_name, p.profile_name,
-                         p.description, p.profile_status
-                ORDER BY p.profile_name
+                GROUP BY p.profile_id, p.org_id, p.device_id, p.profile_scope, o.org_name,
+                         d.terminal_id, v.plate_number, p.profile_name, p.description, p.profile_status
+                ORDER BY CASE p.profile_scope WHEN 'global' THEN 0 WHEN 'org' THEN 1 ELSE 2 END,
+                         COALESCE(o.org_name, d.terminal_id, ''), p.profile_name
                 """, (rs, i) -> row(
                 "profileId", rs.getString("profile_id"),
                 "orgId", rs.getString("org_id"),
+                "deviceId", rs.getString("device_id"),
+                "profileScope", rs.getString("profile_scope"),
                 "orgName", rs.getString("org_name"),
+                "terminalId", rs.getString("terminal_id"),
+                "plateNumber", rs.getString("plate_number"),
                 "profileName", rs.getString("profile_name"),
                 "description", rs.getString("description"),
                 "profileStatus", rs.getString("profile_status"),
@@ -312,6 +330,88 @@ public class RegistryApi {
                 "valueText", rs.getString("value_text"),
                 "createdAt", nullableTimestamp(rs, "created_at")
         ), profileId);
+    }
+
+    @GetMapping("/devices/{deviceId}/effective-parameters")
+    public ResponseEntity<Object> effectiveParameters(@PathVariable String deviceId) {
+        Map<String, Object> device = deviceContext(deviceId);
+        if (device == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "device not found: " + deviceId));
+        }
+        @SuppressWarnings("unchecked")
+        List<String> orgPath = (List<String>) device.get("orgPath");
+        List<Map<String, Object>> layers = new ArrayList<>();
+        layers.add(row(
+                "layer", "protocol_default",
+                "label", "JT808 Table 12 defaults",
+                "profileId", null,
+                "scope", "global",
+                "precedence", 0
+        ));
+        int precedence = 1;
+        layers.addAll(activeProfiles("global", null, null, precedence++));
+        for (String orgId : orgPath) {
+            layers.addAll(activeProfiles("org", orgId, null, precedence++));
+        }
+        layers.addAll(activeProfiles("terminal", null, deviceId, precedence));
+
+        Map<Integer, Map<String, Object>> effective = new LinkedHashMap<>();
+        for (Map<String, Object> catalog : catalogRows()) {
+            Integer parameterId = (Integer) catalog.get("parameterId");
+            effective.put(parameterId, row(
+                    "parameterId", parameterId,
+                    "hexId", catalog.get("hexId"),
+                    "parameterName", catalog.get("parameterName"),
+                    "category", catalog.get("category"),
+                    "valueKind", normalizeValueKind((String) catalog.get("valueKind")),
+                    "valueText", catalog.get("defaultValue"),
+                    "unit", catalog.get("unit"),
+                    "sourceLayer", "protocol_default",
+                    "sourceProfileId", null,
+                    "sourceProfileName", "JT808 Table 12 defaults",
+                    "sourceScope", "global",
+                    "precedence", 0,
+                    "alarmRelated", catalog.get("alarmRelated"),
+                    "requiresRestart", catalog.get("requiresRestart")
+            ));
+        }
+
+        for (Map<String, Object> layer : layers) {
+            String profileId = (String) layer.get("profileId");
+            if (profileId == null) continue;
+            List<Map<String, Object>> items = profileItemsWithCatalog(profileId);
+            for (Map<String, Object> item : items) {
+                Integer parameterId = (Integer) item.get("parameterId");
+                Map<String, Object> current = effective.get(parameterId);
+                String unit = current == null ? (String) item.get("unit") : (String) current.get("unit");
+                effective.put(parameterId, row(
+                        "parameterId", parameterId,
+                        "hexId", item.get("hexId"),
+                        "parameterName", item.get("parameterName"),
+                        "category", item.get("category"),
+                        "valueKind", item.get("valueKind"),
+                        "valueText", item.get("valueText"),
+                        "unit", unit,
+                        "sourceLayer", layer.get("layer"),
+                        "sourceProfileId", profileId,
+                        "sourceProfileName", layer.get("label"),
+                        "sourceScope", layer.get("scope"),
+                        "precedence", layer.get("precedence"),
+                        "alarmRelated", item.get("alarmRelated"),
+                        "requiresRestart", item.get("requiresRestart")
+                ));
+            }
+        }
+
+        return ResponseEntity.ok(row(
+                "deviceId", device.get("deviceId"),
+                "terminalId", device.get("terminalId"),
+                "orgId", device.get("orgId"),
+                "orgName", device.get("orgName"),
+                "plateNumber", device.get("plateNumber"),
+                "layers", layers,
+                "parameters", new ArrayList<>(effective.values())
+        ));
     }
 
     @GetMapping("/parameter-pushes")
@@ -503,8 +603,9 @@ public class RegistryApi {
         }
         if (exists("SELECT COUNT(*) FROM garuda_registry.vehicle_asset WHERE device_id = ?", deviceId)
                 || exists("SELECT COUNT(*) FROM garuda_registry.media_channel WHERE device_id = ?", deviceId)
-                || exists("SELECT COUNT(*) FROM garuda_registry.device_parameter_push WHERE device_id = ?", deviceId)) {
-            return conflict("device is still referenced by vehicles, media channels, or parameter pushes");
+                || exists("SELECT COUNT(*) FROM garuda_registry.device_parameter_push WHERE device_id = ?", deviceId)
+                || exists("SELECT COUNT(*) FROM garuda_registry.terminal_parameter_profile WHERE device_id = ?", deviceId)) {
+            return conflict("device is still referenced by vehicles, media channels, parameter profiles, or parameter pushes");
         }
         jdbc.update("DELETE FROM garuda_registry.terminal_device WHERE device_id = ?", deviceId);
         return ok(Map.of("result", "deleted", "deviceId", deviceId));
@@ -667,11 +768,13 @@ public class RegistryApi {
         }
         jdbc.update("""
                 INSERT INTO garuda_registry.terminal_parameter_profile
-                    (profile_id, org_id, profile_name, description, profile_status)
-                VALUES (?, ?, ?, ?, ?)
+                    (profile_id, org_id, device_id, profile_scope, profile_name, description, profile_status)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 profileId,
-                payload.orgId().trim(),
+                targetOrgId(payload),
+                targetDeviceId(payload),
+                profileScope(payload),
                 payload.profileName().trim(),
                 blankToNull(payload.description()),
                 defaultIfBlank(payload.profileStatus(), "draft"));
@@ -689,13 +792,17 @@ public class RegistryApi {
         jdbc.update("""
                 UPDATE garuda_registry.terminal_parameter_profile
                    SET org_id = ?,
+                       device_id = ?,
+                       profile_scope = ?,
                        profile_name = ?,
                        description = ?,
                        profile_status = ?,
                        updated_at = CURRENT_TIMESTAMP
                  WHERE profile_id = ?
                 """,
-                payload.orgId().trim(),
+                targetOrgId(payload),
+                targetDeviceId(payload),
+                profileScope(payload),
                 payload.profileName().trim(),
                 blankToNull(payload.description()),
                 defaultIfBlank(payload.profileStatus(), "draft"),
@@ -798,20 +905,19 @@ public class RegistryApi {
         if (!exists("SELECT COUNT(*) FROM garuda_registry.terminal_parameter_item WHERE profile_id = ?", profileId)) {
             return conflict("parameter profile has no items to push");
         }
-        String pushId = "push-" + java.util.UUID.randomUUID().toString().substring(0, 8);
         String requestedBy = defaultIfBlank(payload.requestedBy(), "Garuda");
-        jdbc.update("""
-                INSERT INTO garuda_registry.device_parameter_push
-                    (push_id, device_id, profile_id, push_status, requested_by, result_message)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                pushId,
-                payload.deviceId().trim(),
+        ParameterPushCoordinator.PushDispatchResult result = parameterPushCoordinator.dispatch(
                 profileId,
-                "queued",
-                requestedBy,
-                "Profile queued for JT808 parameter push");
-        return ok(Map.of("result", "queued", "pushId", pushId));
+                payload.deviceId().trim(),
+                requestedBy);
+        return ok(Map.of(
+                "result", result.pushStatus(),
+                "pushId", result.pushId(),
+                "commandId", result.commandId(),
+                "accepted", result.accepted(),
+                "offline", result.offline(),
+                "message", result.resultMessage()
+        ));
     }
 
     private int count(String table) {
@@ -827,6 +933,143 @@ public class RegistryApi {
     private boolean exists(String sql, Object... values) {
         Integer count = jdbc.queryForObject(sql, Integer.class, values);
         return count != null && count > 0;
+    }
+
+    private Map<String, Object> deviceContext(String deviceId) {
+        List<Map<String, Object>> rows = jdbc.query("""
+                SELECT
+                    d.device_id    AS device_id,
+                    d.terminal_id  AS terminal_id,
+                    d.org_id       AS org_id,
+                    o.org_name     AS org_name,
+                    v.plate_number AS plate_number
+                FROM garuda_registry.terminal_device d
+                JOIN garuda_registry.org_unit o
+                    ON o.org_id = d.org_id
+                LEFT JOIN garuda_registry.vehicle_asset v
+                    ON v.device_id = d.device_id
+                WHERE d.device_id = ?
+                """, (rs, i) -> row(
+                "deviceId", rs.getString("device_id"),
+                "terminalId", rs.getString("terminal_id"),
+                "orgId", rs.getString("org_id"),
+                "orgName", rs.getString("org_name"),
+                "plateNumber", rs.getString("plate_number")
+        ), deviceId);
+        if (rows.isEmpty()) return null;
+        Map<String, Object> device = rows.get(0);
+        device.put("orgPath", orgPath((String) device.get("orgId")));
+        return device;
+    }
+
+    private List<String> orgPath(String leafOrgId) {
+        List<String> reversed = new ArrayList<>();
+        String current = leafOrgId;
+        while (current != null && !current.isBlank() && reversed.size() < 32) {
+            reversed.add(current);
+            current = jdbc.query("""
+                    SELECT parent_org_id
+                    FROM garuda_registry.org_unit
+                    WHERE org_id = ?
+                    """, rs -> rs.next() ? rs.getString("parent_org_id") : null, current);
+        }
+        List<String> path = new ArrayList<>();
+        for (int i = reversed.size() - 1; i >= 0; i--) {
+            path.add(reversed.get(i));
+        }
+        return path;
+    }
+
+    private List<Map<String, Object>> activeProfiles(String scope, String orgId, String deviceId, int precedence) {
+        return jdbc.query("""
+                SELECT
+                    p.profile_id     AS profile_id,
+                    p.profile_name   AS profile_name,
+                    p.profile_scope  AS profile_scope,
+                    p.org_id         AS org_id,
+                    p.device_id      AS device_id,
+                    o.org_name       AS org_name,
+                    d.terminal_id    AS terminal_id,
+                    v.plate_number   AS plate_number
+                FROM garuda_registry.terminal_parameter_profile p
+                LEFT JOIN garuda_registry.org_unit o
+                    ON o.org_id = p.org_id
+                LEFT JOIN garuda_registry.terminal_device d
+                    ON d.device_id = p.device_id
+                LEFT JOIN garuda_registry.vehicle_asset v
+                    ON v.device_id = d.device_id
+                WHERE p.profile_status = 'active'
+                  AND p.profile_scope = ?
+                  AND ((? IS NULL AND p.org_id IS NULL) OR p.org_id = ?)
+                  AND ((? IS NULL AND p.device_id IS NULL) OR p.device_id = ?)
+                ORDER BY p.updated_at, p.profile_name
+                """, (rs, i) -> {
+            String label = rs.getString("profile_name");
+            String profileScope = rs.getString("profile_scope");
+            String target = "global".equals(profileScope)
+                    ? "Global"
+                    : "org".equals(profileScope)
+                    ? rs.getString("org_name")
+                    : defaultIfBlank(rs.getString("plate_number"), rs.getString("terminal_id"));
+            return row(
+                    "layer", profileScope,
+                    "label", label,
+                    "target", target,
+                    "profileId", rs.getString("profile_id"),
+                    "scope", profileScope,
+                    "precedence", precedence
+            );
+        }, scope, orgId, orgId, deviceId, deviceId);
+    }
+
+    private List<Map<String, Object>> catalogRows() {
+        return jdbc.query("""
+                SELECT
+                    parameter_id, hex_id, parameter_name, value_kind, unit, default_value,
+                    category, alarm_related, requires_restart
+                FROM garuda_registry.terminal_parameter_catalog
+                ORDER BY parameter_id
+                """, (rs, i) -> row(
+                "parameterId", rs.getInt("parameter_id"),
+                "hexId", rs.getString("hex_id"),
+                "parameterName", rs.getString("parameter_name"),
+                "valueKind", rs.getString("value_kind"),
+                "unit", rs.getString("unit"),
+                "defaultValue", rs.getString("default_value"),
+                "category", rs.getString("category"),
+                "alarmRelated", rs.getBoolean("alarm_related"),
+                "requiresRestart", rs.getBoolean("requires_restart")
+        ));
+    }
+
+    private List<Map<String, Object>> profileItemsWithCatalog(String profileId) {
+        return jdbc.query("""
+                SELECT
+                    i.parameter_id    AS parameter_id,
+                    i.value_kind      AS value_kind,
+                    i.value_text      AS value_text,
+                    c.hex_id          AS hex_id,
+                    COALESCE(c.parameter_name, 'Custom parameter') AS parameter_name,
+                    COALESCE(c.category, 'Custom') AS category,
+                    c.unit            AS unit,
+                    COALESCE(c.alarm_related, FALSE) AS alarm_related,
+                    COALESCE(c.requires_restart, FALSE) AS requires_restart
+                FROM garuda_registry.terminal_parameter_item i
+                LEFT JOIN garuda_registry.terminal_parameter_catalog c
+                    ON c.parameter_id = i.parameter_id
+                WHERE i.profile_id = ?
+                ORDER BY i.parameter_id
+                """, (rs, i) -> row(
+                "parameterId", rs.getInt("parameter_id"),
+                "valueKind", rs.getString("value_kind"),
+                "valueText", rs.getString("value_text"),
+                "hexId", rs.getString("hex_id") == null ? String.format("0x%08X", rs.getInt("parameter_id")) : rs.getString("hex_id"),
+                "parameterName", rs.getString("parameter_name"),
+                "category", rs.getString("category"),
+                "unit", rs.getString("unit"),
+                "alarmRelated", rs.getBoolean("alarm_related"),
+                "requiresRestart", rs.getBoolean("requires_restart")
+        ), profileId);
     }
 
     private static String generateOrgId(String orgCode) {
@@ -850,6 +1093,22 @@ public class RegistryApi {
 
     private static String defaultIfBlank(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value.trim();
+    }
+
+    private static String normalizeValueKind(String valueKind) {
+        return "bytes8".equals(valueKind) ? "bytes" : valueKind;
+    }
+
+    private static String profileScope(ParameterProfilePayload payload) {
+        return defaultIfBlank(payload.profileScope(), "org");
+    }
+
+    private static String targetOrgId(ParameterProfilePayload payload) {
+        return "org".equals(profileScope(payload)) ? payload.orgId().trim() : null;
+    }
+
+    private static String targetDeviceId(ParameterProfilePayload payload) {
+        return "terminal".equals(profileScope(payload)) ? payload.deviceId().trim() : null;
     }
 
     private static String generateVehicleId(String plateNumber) {
@@ -915,7 +1174,16 @@ public class RegistryApi {
     private static void validateParameterProfilePayload(ParameterProfilePayload payload, String profileId) {
         if (payload == null) throw new IllegalArgumentException("request body is required");
         if (profileId == null || profileId.isBlank()) throw new IllegalArgumentException("profileId/profileName is required");
-        if (payload.orgId() == null || payload.orgId().isBlank()) throw new IllegalArgumentException("orgId is required");
+        String scope = profileScope(payload);
+        if (!scope.equals("global") && !scope.equals("org") && !scope.equals("terminal")) {
+            throw new IllegalArgumentException("profileScope must be global, org, or terminal");
+        }
+        if (scope.equals("org") && (payload.orgId() == null || payload.orgId().isBlank())) {
+            throw new IllegalArgumentException("orgId is required for org parameter profiles");
+        }
+        if (scope.equals("terminal") && (payload.deviceId() == null || payload.deviceId().isBlank())) {
+            throw new IllegalArgumentException("deviceId is required for terminal parameter profiles");
+        }
         if (payload.profileName() == null || payload.profileName().isBlank()) throw new IllegalArgumentException("profileName is required");
     }
 
@@ -1020,6 +1288,8 @@ public class RegistryApi {
     public record ParameterProfilePayload(
             String profileId,
             String orgId,
+            String deviceId,
+            String profileScope,
             String profileName,
             String description,
             String profileStatus) {}

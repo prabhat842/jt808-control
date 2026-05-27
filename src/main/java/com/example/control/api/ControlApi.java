@@ -23,10 +23,10 @@ public class ControlApi {
     private final ProcessOrchestrator orchestrator;
     private final UiProperties        uiProperties;
 
-    @Value("${rtvs-url:http://localhost:8089}")
+    @Value("${rtvs-url:http://127.0.0.1:8089}")
     private String rtvsUrl;
 
-    @Value("${server-url:http://localhost:8888}")
+    @Value("${server-url:http://127.0.0.1:8888}")
     private String serverUrl;
 
     private final HttpClient http = HttpClient.newBuilder()
@@ -114,6 +114,13 @@ public class ControlApi {
         return proxyAsync(serverUrl + "/api/gps/latest");
     }
 
+    @GetMapping(value = "/gps/recent", produces = MediaType.APPLICATION_JSON_VALUE)
+    public CompletableFuture<ResponseEntity<String>> gpsRecent(
+            @RequestParam(defaultValue = "200") int limit) {
+        int safe = Math.max(1, Math.min(limit, 1000));
+        return proxyAsync(serverUrl + "/api/gps/recent?limit=" + safe);
+    }
+
     @GetMapping(value = "/alarms", produces = MediaType.APPLICATION_JSON_VALUE)
     public CompletableFuture<ResponseEntity<String>> alarms(
             @RequestParam(defaultValue = "200") int limit) {
@@ -128,6 +135,13 @@ public class ControlApi {
         // URL-encode alarmId before forwarding
         String encoded = java.net.URLEncoder.encode(alarmId, java.nio.charset.StandardCharsets.UTF_8);
         return proxyAsync(serverUrl + "/api/alarm-files?alarmId=" + encoded);
+    }
+
+    @GetMapping(value = "/alarm-files/recent", produces = MediaType.APPLICATION_JSON_VALUE)
+    public CompletableFuture<ResponseEntity<String>> recentAlarmFiles(
+            @RequestParam(defaultValue = "100") int limit) {
+        int safe = Math.max(1, Math.min(limit, 1000));
+        return proxyAsync(serverUrl + "/api/alarm-files/recent?limit=" + safe);
     }
 
     // ── RTVS proxy (live stream start/stop) ──────────────────────────────
@@ -154,6 +168,63 @@ public class ControlApi {
     @GetMapping(value = "/clips", produces = MediaType.APPLICATION_JSON_VALUE)
     public CompletableFuture<ResponseEntity<String>> clips() {
         return proxyAsync(serverUrl + "/api/clips");
+    }
+
+    @GetMapping(value = "/media/clips/{terminalId}/{fileName:.+}")
+    public CompletableFuture<ResponseEntity<byte[]>> clipMedia(
+            @PathVariable String terminalId,
+            @PathVariable String fileName) {
+        String encodedTerminal = java.net.URLEncoder.encode(terminalId, java.nio.charset.StandardCharsets.UTF_8);
+        String encodedFile = java.net.URLEncoder.encode(fileName, java.nio.charset.StandardCharsets.UTF_8);
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(serverUrl + "/media/clips/" + encodedTerminal + "/" + encodedFile))
+                .timeout(Duration.ofSeconds(10))
+                .GET()
+                .build();
+        return http.sendAsync(req, HttpResponse.BodyHandlers.ofByteArray())
+                .thenApply(resp -> {
+                    String contentType = resp.headers().firstValue("content-type")
+                            .orElse(MediaType.APPLICATION_OCTET_STREAM_VALUE);
+                    String contentDisposition = resp.headers().firstValue("content-disposition")
+                            .orElse("inline; filename=\"" + fileName + "\"");
+                    return ResponseEntity.status(resp.statusCode())
+                            .contentType(MediaType.parseMediaType(contentType))
+                            .header("Content-Disposition", contentDisposition)
+                            .body(resp.body());
+                });
+    }
+
+    @GetMapping(value = "/media/view/{terminalId}/{fileName:.+}", produces = MediaType.TEXT_HTML_VALUE)
+    public ResponseEntity<String> clipMediaViewer(
+            @PathVariable String terminalId,
+            @PathVariable String fileName) {
+        String href = "/api/media/clips/" + pathPart(terminalId) + "/" + pathPart(fileName);
+        String escapedName = html(fileName);
+        String lower = fileName.toLowerCase(java.util.Locale.ROOT);
+        String media = lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png")
+                ? "<img src=\"" + href + "\" alt=\"" + escapedName + "\">"
+                : "<video src=\"" + href + "\" controls autoplay playsinline></video>";
+        String html = "<!doctype html><html><head><meta charset=\"utf-8\">"
+                + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+                + "<title>" + escapedName + "</title>"
+                + "<style>html,body{margin:0;height:100%;background:#111;color:#eee;font-family:sans-serif}"
+                + "main{height:100%;display:grid;grid-template-rows:auto 1fr}header{padding:10px 14px;background:#181818}"
+                + "video,img{max-width:100%;max-height:100%;place-self:center}section{display:grid;min-height:0}</style>"
+                + "</head><body><main><header>" + escapedName + "</header><section>"
+                + media
+                + "</section></main></body></html>";
+        return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
+    }
+
+    private static String pathPart(String value) {
+        return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    private static String html(String value) {
+        return value.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;");
     }
 
     @GetMapping(value = "/clips/events", produces = "text/event-stream")
@@ -186,7 +257,7 @@ public class ControlApi {
     private CompletableFuture<ResponseEntity<String>> proxyAsync(String url) {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
-                .timeout(Duration.ofSeconds(2)).GET().build();
+                .timeout(Duration.ofSeconds(15)).GET().build();
         return http.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                 .thenApply(resp -> ResponseEntity.status(resp.statusCode())
                         .contentType(MediaType.APPLICATION_JSON)

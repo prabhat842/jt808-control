@@ -6,3 +6,4 @@
 /home/prabhat/jt808-control/src/main/java/com/example/control/ControlPanelApplication.java
 /home/prabhat/jt808-control/src/main/java/com/example/control/service/ServiceDefinition.java
 /home/prabhat/jt808-control/src/main/java/com/example/control/api/RootController.java
+/home/prabhat/jt808-control/src/main/java/com/example/control/service/ParameterPushCoordinator.java

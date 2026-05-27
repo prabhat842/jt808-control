@@ -1,15 +1,15 @@
 package com.example.control.api;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
 
 /**
  * Redirects legacy and convenience paths to the React SPA root.
  */
-@RestController
+@Controller
 public class RootController {
 
     @GetMapping(value = {"/ui", "/ui/", "/dashboard", "/dashboard/"})
@@ -17,5 +17,10 @@ public class RootController {
         return ResponseEntity.status(302)
                 .location(URI.create("/"))
                 .build();
+    }
+
+    @GetMapping(value = {"/vehicles", "/alarms", "/media", "/services", "/management"})
+    public String spaRoute() {
+        return "forward:/index.html";
     }
 }

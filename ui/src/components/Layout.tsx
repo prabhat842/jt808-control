@@ -21,7 +21,7 @@ const NAV = [
   { to: '/vehicles', label: 'Monitor', short: 'MON', icon: MonitorDot, group: 'Operations' },
   { to: '/alarms', label: 'Safety', short: 'SAFE', icon: ShieldAlert, group: 'Operations' },
   { to: '/media', label: 'Media', short: 'VID', icon: CirclePlay, group: 'Operations' },
-  { to: '/management', label: 'Management', short: 'MGT', icon: Boxes, group: 'Registry' },
+  { to: '/management', label: 'Management', short: 'MGT', icon: Boxes, group: 'Management' },
   { to: '/services', label: 'Services', short: 'SVC', icon: Wrench, group: 'Runtime' },
 ]
 
@@ -30,7 +30,7 @@ const TABS: Record<string, { label: string; hint: string; icon: typeof Activity 
   '/vehicles': { label: 'Live Monitor', hint: 'Vehicles, sessions, map', icon: MapPinned },
   '/alarms': { label: 'Risk Workbench', hint: 'Alarm history and clips', icon: ShieldAlert },
   '/media': { label: 'Media Console', hint: 'JT1078 stream control', icon: CirclePlay },
-  '/management': { label: 'Management Center', hint: 'Registry and parameters', icon: Boxes },
+  '/management': { label: 'Management Center', hint: '', icon: Boxes },
   '/services': { label: 'Service Orchestrator', hint: 'Stack control and logs', icon: Wrench },
 }
 
@@ -80,10 +80,17 @@ export default function Layout() {
           {NAV.map(item => {
             const Icon = item.icon
             return (
-              <NavLink key={item.to} to={item.to} end={item.to === '/'} className={({ isActive }) => `garuda-nav-item ${isActive ? 'active' : ''}`}>
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.to === '/'}
+                className={({ isActive }) => `garuda-nav-item ${isActive ? 'active' : ''}`}
+                aria-label={item.label}
+                title={item.label}
+                data-tooltip={`${item.label} · ${item.group}`}
+              >
                 <Icon size={18} strokeWidth={1.8} />
-                <span>{item.label}</span>
-                <span className="garuda-nav-code">{item.short}</span>
+                <span className="sr-only">{item.label}</span>
               </NavLink>
             )
           })}
@@ -132,19 +139,25 @@ export default function Layout() {
           </div>
         </header>
 
-        <div className="garuda-worktabs">
+          <div className="garuda-worktabs">
           {NAV.map(item => {
             const tab = TABS[item.to]
             const Icon = tab.icon
             const selected = item.to === key
             return (
-              <NavLink key={item.to} to={item.to} end={item.to === '/'} className={`garuda-worktab ${selected ? 'active' : ''}`}>
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.to === '/'}
+                className={`garuda-worktab ${selected ? 'active' : ''}`}
+                title={`${tab.label} · ${tab.hint}`}
+              >
                 <Icon size={14} strokeWidth={1.8} />
                 <span>{tab.label}</span>
               </NavLink>
             )
           })}
-          <div className="garuda-worktab-hint">{activeTab.hint}</div>
+          {activeTab.hint && <div className="garuda-worktab-hint">{activeTab.hint}</div>}
         </div>
 
         <main className="garuda-content">

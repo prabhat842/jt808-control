@@ -1,6 +1,8 @@
 import { useTerminals, useMediaSessions, useStartLive, useStopLive } from '../../api/hooks'
 import { useConfig } from '../../api/config'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { useAlarmFiles } from '../../api/hooks'
 
 const STREAM_TYPES = [
   { value: 0, label: 'Video' },
@@ -18,10 +20,23 @@ export default function MediaPage() {
   const { data: sessions  = [] } = useMediaSessions()
   const startLive = useStartLive()
   const stopLive  = useStopLive()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const [terminal,   setTerminal]   = useState('')
   const [channel,    setChannel]    = useState(1)
   const [streamType, setStreamType] = useState(0)
+  const alarmId = searchParams.get('alarmId')
+  const fileName = searchParams.get('file')
+  const viewerTerminal = searchParams.get('terminal') ?? ''
+  const { data: alarmFiles = [] } = useAlarmFiles(alarmId)
+
+  const viewerIndex = useMemo(() => {
+    if (!alarmId || !fileName) return -1
+    return alarmFiles.findIndex(file => file.fileName === fileName)
+  }, [alarmFiles, alarmId, fileName])
+
+  const viewerFile = viewerIndex >= 0 ? alarmFiles[viewerIndex] : null
+  const isBrowserMode = Boolean(alarmId || fileName)
 
   const activeSession = sessions.find(
     s => idMatches(terminal, s.terminalId) && s.channelId === channel && s.active
@@ -114,27 +129,142 @@ export default function MediaPage() {
         </div>
       </div>
 
-      {/* Right: embedded RTVS */}
+      {/* Right: embedded RTVS or alarm browser */}
       <div className="flex-1 flex flex-col" style={{ background: '#050a10' }}>
         <div className="flex items-center justify-between px-4 py-2 flex-shrink-0"
           style={{ borderBottom: '1px solid var(--border)' }}>
           <div className="flex items-center gap-2">
             <span className="font-mono text-[10px] uppercase tracking-[0.2em]" style={{ color: 'var(--muted)' }}>
-              RTVS Studio
+              {isBrowserMode ? 'Alarm Media' : 'RTVS Studio'}
             </span>
             <span className="font-mono text-[9px] px-1.5 py-0.5"
               style={{ background: 'var(--electric-soft)', border: '1px solid var(--electric-border)', borderRadius: '4px', color: 'var(--electric)' }}>
-              ● live
+              {isBrowserMode ? 'browse' : 'live'}
             </span>
           </div>
-          <a href={config.rtvsUrl} target="_blank" rel="noopener noreferrer"
-            className="font-mono text-[10px]" style={{ color: 'var(--muted)', textDecoration: 'none' }}>
-            ↗ open full
-          </a>
+          {isBrowserMode ? (
+            <button
+              type="button"
+              className="font-mono text-[10px]"
+              style={{ color: 'var(--muted)', textDecoration: 'none', background: 'none', border: 'none', cursor: 'pointer' }}
+              onClick={() => setSearchParams({})}
+            >
+              back to live
+            </button>
+          ) : (
+            <a href={config.rtvsUrl} target="_blank" rel="noopener noreferrer"
+              className="font-mono text-[10px]" style={{ color: 'var(--muted)', textDecoration: 'none' }}>
+              ↗ open full
+            </a>
+          )}
         </div>
-        <iframe src={config.rtvsUrl} className="flex-1 w-full border-0"
-          title="RTVS Studio" allow="camera; microphone; autoplay" />
+
+        {isBrowserMode ? (
+          <div className="flex-1 min-h-0 grid grid-rows-[1fr_auto]">
+            <div className="min-h-0 flex items-center justify-center bg-[#050a10] p-4">
+              {viewerFile ? (
+                mediaFrame(viewerFile.fileName)
+              ) : fileName ? (
+                mediaFrame(fileName)
+              ) : (
+                <div className="font-mono text-[11px]" style={{ color: 'var(--muted)' }}>No media selected</div>
+              )}
+            </div>
+
+            {alarmId && (
+              <div className="border-t border-[color:var(--border)] bg-[rgba(9,17,23,0.97)] p-3 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="font-mono text-[10px]" style={{ color: 'var(--muted)' }}>Alarm ID</div>
+                    <div className="font-mono text-[11px]" style={{ color: 'var(--foreground-strong)' }}>{alarmId}</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ padding: '4px 10px', fontSize: '11px' }}
+                      disabled={viewerIndex <= 0}
+                      onClick={() => {
+                        if (viewerIndex <= 0) return
+                        const prev = alarmFiles[viewerIndex - 1]
+                        setSearchParams(buildViewerParams(alarmId, prev.fileName, viewerTerminal || prev.sim))
+                      }}
+                    >
+                      Prev
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ padding: '4px 10px', fontSize: '11px' }}
+                      disabled={viewerIndex < 0 || viewerIndex >= alarmFiles.length - 1}
+                      onClick={() => {
+                        if (viewerIndex < 0 || viewerIndex >= alarmFiles.length - 1) return
+                        const next = alarmFiles[viewerIndex + 1]
+                        setSearchParams(buildViewerParams(alarmId, next.fileName, viewerTerminal || next.sim))
+                      }}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+                  {alarmFiles.map(file => {
+                    const active = file.fileName === (viewerFile?.fileName ?? fileName)
+                    return (
+                      <Link
+                        key={file.path}
+                        to={`/media?${buildViewerParams(alarmId, file.fileName, file.sim)}`}
+                        className="surface-panel-quiet px-3 py-2"
+                        style={{
+                          borderColor: active ? 'var(--electric-border)' : 'var(--border)',
+                          textDecoration: 'none',
+                          color: 'inherit',
+                        }}
+                      >
+                        <div className="font-mono text-[11px]" style={{ color: 'var(--foreground-strong)' }}>
+                          {file.fileName}
+                        </div>
+                        <div className="font-mono text-[10px] mt-1" style={{ color: 'var(--muted)' }}>
+                          {file.uploadTime} · {file.format === 4 ? 'video' : 'image'}
+                        </div>
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <iframe src={config.rtvsUrl} className="flex-1 w-full border-0"
+            title="RTVS Studio" allow="camera; microphone; autoplay" />
+        )}
       </div>
     </div>
   )
+}
+
+function buildViewerParams(alarmId: string, file: string, terminal: string) {
+  const params = new URLSearchParams()
+  params.set('alarmId', alarmId)
+  params.set('file', file)
+  if (terminal) params.set('terminal', terminal)
+  return params.toString()
+}
+
+function mediaFrame(fileName: string) {
+  const { terminalId, leafName } = splitMediaPath(fileName)
+  const src = `/api/media/clips/${encodeURIComponent(terminalId)}/${encodeURIComponent(leafName)}`
+  const lower = leafName.toLowerCase()
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.tif') || lower.endsWith('.tiff')) {
+    return <img src={src} alt={leafName} className="max-w-full max-h-full object-contain" />
+  }
+  return <video src={src} controls autoPlay playsInline className="max-w-full max-h-full" />
+}
+
+function splitMediaPath(fileName: string) {
+  const parts = fileName.split('/').filter(Boolean)
+  const leafName = parts[parts.length - 1] || fileName
+  const terminalId = parts.length > 1 ? parts[0] : ''
+  return { terminalId, leafName }
 }

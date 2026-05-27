@@ -189,7 +189,9 @@ CREATE INDEX IF NOT EXISTS idx_terminal_parameter_catalog_category
 
 CREATE TABLE IF NOT EXISTS garuda_registry.terminal_parameter_profile (
     profile_id      VARCHAR(64) PRIMARY KEY,
-    org_id          VARCHAR(64) NOT NULL,
+    org_id          VARCHAR(64),
+    device_id       VARCHAR(64),
+    profile_scope   VARCHAR(24) NOT NULL DEFAULT 'org',
     profile_name    VARCHAR(160) NOT NULL,
     description     VARCHAR(1000),
     profile_status  VARCHAR(24) NOT NULL DEFAULT 'draft',
@@ -197,10 +199,20 @@ CREATE TABLE IF NOT EXISTS garuda_registry.terminal_parameter_profile (
     updated_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_terminal_parameter_profile_org
         FOREIGN KEY (org_id) REFERENCES garuda_registry.org_unit(org_id),
+    CONSTRAINT fk_terminal_parameter_profile_device
+        FOREIGN KEY (device_id) REFERENCES garuda_registry.terminal_device(device_id),
     CONSTRAINT uq_terminal_parameter_profile_name
-        UNIQUE (org_id, profile_name),
+        UNIQUE (profile_scope, org_id, device_id, profile_name),
+    CONSTRAINT ck_terminal_parameter_profile_scope
+        CHECK (profile_scope IN ('global', 'org', 'terminal')),
     CONSTRAINT ck_terminal_parameter_profile_status
-        CHECK (profile_status IN ('draft', 'active', 'archived'))
+        CHECK (profile_status IN ('draft', 'active', 'archived')),
+    CONSTRAINT ck_terminal_parameter_profile_target
+        CHECK (
+            (profile_scope = 'global' AND org_id IS NULL AND device_id IS NULL)
+            OR (profile_scope = 'org' AND org_id IS NOT NULL AND device_id IS NULL)
+            OR (profile_scope = 'terminal' AND org_id IS NULL AND device_id IS NOT NULL)
+        )
 );
 
 CREATE TABLE IF NOT EXISTS garuda_registry.terminal_parameter_item (

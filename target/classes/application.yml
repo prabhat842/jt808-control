@@ -1,8 +1,8 @@
 server:
   port: 8080
 
-rtvs-url: http://localhost:8089
-server-url: http://localhost:8888
+rtvs-url: http://127.0.0.1:8089
+server-url: http://127.0.0.1:8888
 
 # Values forwarded to the React UI via GET /api/config
 ui:

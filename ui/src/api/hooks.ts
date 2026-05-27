@@ -7,6 +7,7 @@ import type {
   AlarmClip,
   ServiceStatus,
   LatestPosition,
+  RecentGpsReport,
   RecentAlarm,
   AlarmFile,
   RegistrySummary,
@@ -17,6 +18,7 @@ import type {
   ParameterProfile,
   ParameterItem,
   ParameterCatalogEntry,
+  EffectiveParametersResponse,
   ParameterPush,
 } from '../types'
 
@@ -108,11 +110,19 @@ export function useLatestPositions() {
   })
 }
 
+export function useRecentGpsReports(limit = 200) {
+  return useQuery<RecentGpsReport[]>({
+    queryKey: ['gps-recent', limit],
+    queryFn: () => client.get('/gps/recent', { params: { limit } }).then(r => r.data),
+    refetchInterval: 3000,
+  })
+}
+
 export function useRecentAlarms(limit = 200) {
   return useQuery<RecentAlarm[]>({
     queryKey: ['alarms', limit],
     queryFn: () => client.get('/alarms', { params: { limit } }).then(r => r.data),
-    refetchInterval: 10000,
+    refetchInterval: 3000,
   })
 }
 
@@ -124,13 +134,21 @@ export function useAlarmFiles(alarmId: string | null) {
   })
 }
 
+export function useRecentAlarmFiles(limit = 100) {
+  return useQuery<AlarmFile[]>({
+    queryKey: ['alarm-files-recent', limit],
+    queryFn: () => client.get('/alarm-files/recent', { params: { limit } }).then(r => r.data),
+    refetchInterval: 3000,
+  })
+}
+
 // ── Alarm clips (in-memory, SSE) ──────────────────────────────────────────
 
 export function useAlarmClips() {
   return useQuery<AlarmClip[]>({
     queryKey: ['clips'],
     queryFn: () => client.get('/clips').then(r => r.data),
-    refetchInterval: 5000,
+    refetchInterval: 3000,
   })
 }
 
@@ -366,7 +384,7 @@ export function useDeleteDriverProfile() {
 export function useCreateParameterProfile() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (payload: Partial<ParameterProfile> & { orgId: string; profileName: string }) =>
+    mutationFn: (payload: Partial<ParameterProfile> & { profileName: string }) =>
       client.post('/registry/parameter-profiles', payload).then(r => r.data),
     onSuccess: async () => {
       await Promise.all([
@@ -381,7 +399,7 @@ export function useCreateParameterProfile() {
 export function useUpdateParameterProfile() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ profileId, payload }: { profileId: string; payload: Partial<ParameterProfile> & { orgId: string; profileName: string } }) =>
+    mutationFn: ({ profileId, payload }: { profileId: string; payload: Partial<ParameterProfile> & { profileName: string } }) =>
       client.put(`/registry/parameter-profiles/${encodeURIComponent(profileId)}`, payload).then(r => r.data),
     onSuccess: async () => {
       await Promise.all([
@@ -487,6 +505,14 @@ export function useApplyParameterProfile() {
         qc.invalidateQueries({ queryKey: ['registry-devices'] }),
       ])
     },
+  })
+}
+
+export function useEffectiveParameters(deviceId: string | null) {
+  return useQuery<EffectiveParametersResponse>({
+    queryKey: ['registry-effective-parameters', deviceId],
+    queryFn: () => client.get(`/registry/devices/${encodeURIComponent(deviceId ?? '')}/effective-parameters`).then(r => r.data),
+    enabled: !!deviceId,
   })
 }
 
