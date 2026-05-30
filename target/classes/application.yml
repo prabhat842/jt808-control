@@ -1,6 +1,29 @@
 server:
   port: 8080
 
+rtvs-url: http://127.0.0.1:8089
+server-url: http://127.0.0.1:8888
+
+# Values forwarded to the React UI via GET /api/config
+ui:
+  rtvs-browser-url: http://localhost:8089   # URL the *browser* uses to open RTVS
+  mapbox-token: ${MAPBOX_TOKEN:${VITE_MAPBOX_TOKEN:}} # Supply token via env or local .env file; keep secrets out of git
+  map-center-lat: 22.8046                   # Default map centre latitude  (Jamshedpur)
+  map-center-lon: 86.2029                   # Default map centre longitude (Jamshedpur)
+  map-zoom: 11
+
+spring:
+  datasource:
+    url: jdbc:h2:mem:garuda-registry;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:garuda-registry-schema.sql
+      data-locations: classpath:garuda-registry-seed.sql
+
 management:
   endpoints:
     web:
@@ -12,6 +35,22 @@ logging:
     com.example.control: INFO
 
 services:
+  # ── Database ─────────────────────────────────────────────────────────────
+  # Starts first so data is available when the server starts.
+  # Stops last so all pending writes from jt808-server land before shutdown.
+  # shutdownTimeoutSec=30: gives ClickHouse time to flush MergeTree buffers.
+  - id: clickhouse
+    name: ClickHouse
+    description: "Time-series DB · vehicle_gps · vehicle_alarm · vehicle_alarm_file"
+    group: database
+    command:
+      - /home/prabhat/bin/clickhouse
+      - server
+      - --config=/home/prabhat/clickhouse-data/preprocessed_configs/clickhouse-config.xml
+    workDir: /home/prabhat/clickhouse-data
+    shutdownTimeoutSec: 30
+    displayOrder: 0
+
   # ── Vehicle terminal ─────────────────────────────────────────────────────
   # Starts independently. DMS/ADAS/BSD run immediately on startup.
   # Connects to server automatically whenever it becomes available.
@@ -33,9 +72,7 @@ services:
     description: "JT808 signaling · terminals connect here when ready"
     group: infrastructure
     jar: /home/prabhat/jt808-server/target/jt808-server-0.1.0-SNAPSHOT.jar
-    args:
-      - "--config"
-      - "/home/prabhat/jt808-server/config/server.json"
+    args: []
     workDir: /home/prabhat/jt808-server
     displayOrder: 2
 

@@ -61,6 +61,18 @@ export interface LatestPosition {
   gpsTime: string
 }
 
+export interface RecentGpsReport {
+  vehicleId: string
+  sim: string
+  lat: number
+  lon: number
+  speed: number
+  direction: number
+  warnBit: number
+  gpsTime: string
+  receivedAt: string
+}
+
 export interface RecentAlarm {
   vehicleId: string
   sim: string
@@ -86,4 +98,170 @@ export interface AlarmFile {
   url: string
   path: string
   uploadTime: string
+}
+
+export interface RegistrySummary {
+  organizations: number
+  devices: number
+  vehicles: number
+  drivers: number
+  profiles: number
+}
+
+export interface OrgUnit {
+  orgId: string
+  parentOrgId: string | null
+  orgCode: string
+  orgName: string
+  orgKind: string
+  status: string
+  contactName: string | null
+  contactPhone: string | null
+  parentOrgName: string | null
+  deviceCount: number
+  vehicleCount: number
+}
+
+export interface RegistryDevice {
+  deviceId: string
+  orgId: string
+  orgName: string
+  terminalId: string
+  sim: string
+  protocolFamily: string
+  protocolVersion: string
+  deviceModel: string | null
+  manufacturerId: string | null
+  firmwareVersion: string | null
+  hardwareVersion: string | null
+  installStatus: string
+  lifecycleStatus: string
+  lastSeenAt: string | null
+  plateNumber: string | null
+  channelCount: number
+}
+
+export interface VehicleAsset {
+  vehicleId: string
+  orgId: string
+  orgName: string
+  deviceId: string | null
+  terminalId: string | null
+  plateNumber: string
+  plateColor: string
+  vin: string | null
+  vehicleKind: string
+  fuelKind: string | null
+  capacityTons: number | null
+  operationStatus: string
+  currentDriverId: string | null
+  currentDriverName: string | null
+}
+
+export interface DriverProfile {
+  driverId: string
+  orgId: string
+  orgName: string
+  displayName: string
+  phone: string | null
+  licenseNumber: string | null
+  licenseClass: string | null
+  licenseExpiresOn: string | null
+  qualificationNumber: string | null
+  qualificationExpiresOn: string | null
+  employmentStatus: string
+  riskLabel: string
+  currentVehiclePlate: string | null
+}
+
+export interface ParameterProfile {
+  profileId: string
+  orgId: string | null
+  deviceId: string | null
+  profileScope: 'global' | 'org' | 'terminal'
+  orgName: string | null
+  terminalId: string | null
+  plateNumber: string | null
+  profileName: string
+  description: string | null
+  profileStatus: string
+  itemCount: number
+}
+
+export interface ParameterItem {
+  itemId: string
+  profileId: string
+  parameterId: number
+  valueKind: string
+  valueText: string
+  createdAt: string | null
+}
+
+export interface ParameterCatalogEntry {
+  parameterId: number
+  hexId: string
+  parameterName: string
+  shortDescription: string
+  longDescription: string | null
+  valueKind: string
+  unit: string | null
+  minValue: string | null
+  maxValue: string | null
+  defaultValue: string | null
+  category: string
+  businessImpact: string | null
+  alarmRelated: boolean
+  requiresRestart: boolean
+  tableRef: string
+}
+
+export interface ParameterPush {
+  pushId: string
+  deviceId: string
+  terminalId: string
+  plateNumber: string | null
+  profileId: string
+  profileName: string
+  commandId: number | null
+  pushStatus: string
+  requestedBy: string | null
+  requestedAt: string | null
+  completedAt: string | null
+  resultMessage: string | null
+}
+
+export interface EffectiveParameter {
+  parameterId: number
+  hexId: string
+  parameterName: string
+  category: string
+  valueKind: string
+  valueText: string | null
+  unit: string | null
+  sourceLayer: string
+  sourceProfileId: string | null
+  sourceProfileName: string
+  sourceScope: string
+  precedence: number
+  alarmRelated: boolean
+  requiresRestart: boolean
+}
+
+export interface EffectiveParameterLayer {
+  layer: string
+  label: string
+  target?: string
+  profileId: string | null
+  scope: string
+  precedence: number
+}
+
+export interface EffectiveParametersResponse {
+  deviceId: string
+  terminalId: string
+  orgId: string
+  orgName: string
+  plateNumber: string | null
+  layers: EffectiveParameterLayer[]
+  parameters: EffectiveParameter[]
 }

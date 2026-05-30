@@ -1,113 +1,17 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>JT808 Control Panel</title>
-  <link rel="stylesheet" href="/style.css">
-</head>
-<body>
-  <header>
-    <div class="header-left">
-      <div class="logo">JT808</div>
-      <div>
-        <h1>Fleet Control Panel</h1>
-        <p class="subtitle">Vehicle terminal · Infrastructure management</p>
-      </div>
-    </div>
-    <div class="header-right">
-      <nav class="top-nav" aria-label="Control panel sections">
-        <button class="nav-tab active" id="servicesTab" onclick="showPage('services')">Services</button>
-        <button class="nav-tab" id="mediaTab" onclick="showPage('media')">Media</button>
-      </nav>
-      <span class="panel-badge" id="panelStatus">connecting…</span>
-    </div>
-  </header>
-
-  <main>
-  <section id="servicesPage" class="page active">
-
-    <!-- Vehicle section -->
-    <section class="tier">
-      <div class="tier-header">
-        <div class="tier-label vehicle">
-          <span class="tier-icon">🚗</span>
-          <div>
-            <div class="tier-title">Vehicle Terminal</div>
-            <div class="tier-note">Starts independently · DMS / ADAS / BSD always active · auto-connects when server is available</div>
-          </div>
-        </div>
-        <div class="tier-actions">
-          <button class="btn btn-vehicle" onclick="apiGroup('start','vehicle')">▶ Start Vehicle</button>
-          <button class="btn btn-stop"    onclick="apiGroup('stop','vehicle')">■ Stop Vehicle</button>
-        </div>
-      </div>
-      <div class="cards" id="vehicleCards"></div>
-    </section>
-
-    <!-- Infrastructure section -->
-    <section class="tier">
-      <div class="tier-header">
-        <div class="tier-label infra">
-          <span class="tier-icon">🖥</span>
-          <div>
-            <div class="tier-title">Infrastructure</div>
-            <div class="tier-note">JT808 server · RTVS media server · can restart without affecting the vehicle</div>
-          </div>
-        </div>
-        <div class="tier-actions">
-          <button class="btn btn-primary" onclick="apiGroup('start','infrastructure')">▶ Start Infrastructure</button>
-          <button class="btn btn-stop"    onclick="apiGroup('stop','infrastructure')">■ Stop Infrastructure</button>
-        </div>
-      </div>
-      <div class="cards" id="infraCards"></div>
-    </section>
-
-    <!-- Global actions -->
-    <section class="global-actions">
-      <span class="global-label">All services</span>
-      <button class="btn btn-primary"   onclick="api('start-all')">▶ Start All</button>
-      <button class="btn btn-stop"      onclick="api('stop-all')">■ Stop All</button>
-      <button class="btn btn-secondary" onclick="api('restart-all')">↺ Restart All</button>
-    </section>
-
-    <!-- Log viewer -->
-    <section class="log-section">
-      <div class="log-header">
-        <h2>Live Logs</h2>
-        <div class="log-tabs" id="logTabs"></div>
-        <div class="log-controls">
-          <label class="toggle-label">
-            <input type="checkbox" id="autoScroll" checked> Auto-scroll
-          </label>
-          <button class="btn btn-sm" onclick="clearLog()">Clear</button>
-        </div>
-      </div>
-      <div class="log-box" id="logBox">
-        <div class="log-placeholder">Select a service tab above to stream its logs</div>
-      </div>
-    </section>
-
-  </section>
-
-  <section id="mediaPage" class="page">
-    <section class="media-shell">
-      <div class="media-header">
-        <div>
-          <h2>Media Studio</h2>
-          <p>Live video, stream start/stop, and DMS status from RTVS.</p>
-        </div>
-        <div class="media-actions">
-          <button class="btn btn-secondary" onclick="reloadMediaFrame()">Reload media</button>
-          <a class="btn btn-primary media-link" href="http://localhost:8089" target="_blank" rel="noopener">Open full page</a>
-        </div>
-      </div>
-      <iframe id="mediaFrame" class="media-frame" src="http://localhost:8089" title="RTVS Media Studio"></iframe>
-    </section>
-  </section>
-
-  </main>
-
-  <script src="/app.js"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GoatAI Fleet Command</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <script type="module" crossorigin src="/assets/index-UVvDjSJS.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-CRiS5loR.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
 </html>
